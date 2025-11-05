@@ -78,6 +78,8 @@ class Puzzle:
                     kind = SumRegion(region["target"])
                 case "empty":
                     kind = EmptyRegion()
+                case other:
+                    raise ValueError(f"Unimplemented region type {other}")
 
             indices = []
             for [x, y] in region["indices"]:
