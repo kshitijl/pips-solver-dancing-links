@@ -182,7 +182,7 @@ class Puzzle:
     ) -> None:
         region = gi.grid2region[pos]
         match region.kind:
-            case SumRegion(target=_m):
+            case SumRegion():
                 row.append(f"E_{domino.idx}_{end}R_{region.idx}:1")
 
     def generate_options(self, gi: GridInfo) -> None:
@@ -233,7 +233,7 @@ class Puzzle:
 
         for region in self.regions:
             match region.kind:
-                case SumRegion(target=_m):
+                case SumRegion():
                     for domino in self.dominoes:
                         for end, pips in enumerate([domino.end1, domino.end2]):
                             row = [f"E_{domino.idx}_{end}R_{region.idx}:0"]
