@@ -1,7 +1,7 @@
+from __future__ import annotations
 import json
-import sys
 from dataclasses import dataclass
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Any, Tuple
 from enum import Enum
 import argparse
 
@@ -51,6 +51,7 @@ class GridInfo:
     max_x: int
     max_y: int
     grid2region: Dict[GridLoc, Region]
+    all_sum_regions: List[Region]
 
 
 class Orientation(Enum):
@@ -64,13 +65,14 @@ class Puzzle:
     dominoes: List[Domino]
 
     @classmethod
-    def load(cls, puzzle_dict: Dict):
+    def load(cls, puzzle_dict: Dict[str, Any]) -> Puzzle:
         dominoes = []
         for idx, [x, y] in enumerate(puzzle_dict["dominoes"]):
             dominoes.append(Domino(idx, x, y))
 
         regions = []
         for idx, region in enumerate(puzzle_dict["regions"]):
+            kind: RegionType
             match region["type"]:
                 case "equals":
                     kind = EqualsRegion()
@@ -92,7 +94,13 @@ class Puzzle:
     def grid_info(self) -> GridInfo:
         all_positions = []
         grid2region = {}
+        all_sum_regions = []
+
         for region in self.regions:
+            match region.kind:
+                case SumRegion():
+                    all_sum_regions.append(region)
+
             for gridloc in region.indices:
                 all_positions.append(gridloc)
                 grid2region[gridloc] = region
@@ -102,9 +110,16 @@ class Puzzle:
         max_x = max([pos.x for pos in all_positions])
         max_y = max([pos.y for pos in all_positions])
 
-        return GridInfo(all_positions, set(all_positions), max_x, max_y, grid2region)
+        return GridInfo(
+            all_positions,
+            set(all_positions),
+            max_x,
+            max_y,
+            grid2region,
+            all_sum_regions,
+        )
 
-    def generate_items(self, gi: GridInfo):
+    def generate_items(self, gi: GridInfo) -> None:
         primaries, secondaries = [], []
         for gridloc in gi.all_positions:
             primaries.append(f"p_{gridloc.x}_{gridloc.y}")
@@ -135,7 +150,7 @@ class Puzzle:
         domino: Domino,
         orientation: Orientation,
         flipped: bool,
-    ):
+    ) -> Tuple[GridLoc, GridLoc, int, int, int, int] | None:
         if start_pos not in gi.all_positions_set:
             return None
 
@@ -164,13 +179,13 @@ class Puzzle:
 
     def sum_region(
         self, gi: GridInfo, pos: GridLoc, domino: Domino, end: int, row: List[str]
-    ):
+    ) -> None:
         region = gi.grid2region[pos]
         match region.kind:
             case SumRegion(target=_m):
                 row.append(f"E_{domino.idx}_{end}R_{region.idx}:1")
 
-    def generate_options(self, gi: GridInfo):
+    def generate_options(self, gi: GridInfo) -> None:
         answer = []
         all_start_pos = [
             GridLoc(x, y) for x in range(gi.max_x + 1) for y in range(gi.max_y + 1)
@@ -233,7 +248,7 @@ class Puzzle:
 
         print("\n".join(answer))
 
-    def has_zeros(self):
+    def has_zeros(self) -> bool:
         for region in self.regions:
             if hasattr(region.kind, "target"):
                 if region.kind.target == 0:
@@ -241,7 +256,7 @@ class Puzzle:
 
         return False
 
-    def transform_to_get_rid_of_zeros(self):
+    def transform_to_get_rid_of_zeros(self) -> None:
         for region in self.regions:
             if hasattr(region.kind, "target"):
                 region.kind.target += len(region.indices)
@@ -250,7 +265,7 @@ class Puzzle:
             domino.end1 += 1
             domino.end2 += 1
 
-    def generate_mcc(self):
+    def generate_mcc(self) -> None:
         if self.has_zeros():
             self.transform_to_get_rid_of_zeros()
         gi = self.grid_info()
@@ -258,7 +273,7 @@ class Puzzle:
         self.generate_options(gi)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_file", type=str)
     parser.add_argument(
