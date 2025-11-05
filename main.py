@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import sys
 from dataclasses import dataclass
 from typing import List, Dict, Set, Any, Tuple
 from enum import Enum
@@ -29,9 +30,16 @@ class EqualsRegion:
     pass
 
 
+class SumOperator(Enum):
+    Equal = 0
+    Greater = 1
+    Less = 2
+
+
 @dataclass
 class SumRegion:
     target: int
+    operator: SumOperator
 
 
 type RegionType = EmptyRegion | EqualsRegion | SumRegion
@@ -52,6 +60,7 @@ class GridInfo:
     max_y: int
     grid2region: Dict[GridLoc, Region]
     all_sum_regions: List[Region]
+    all_domino_end_pips_sorted_desc: List[int]
 
 
 class Orientation(Enum):
@@ -77,7 +86,11 @@ class Puzzle:
                 case "equals":
                     kind = EqualsRegion()
                 case "sum":
-                    kind = SumRegion(region["target"])
+                    kind = SumRegion(region["target"], SumOperator.Equal)
+                case "greater":
+                    kind = SumRegion(region["target"], SumOperator.Greater)
+                case "less":
+                    kind = SumRegion(region["target"], SumOperator.Less)
                 case "empty":
                     kind = EmptyRegion()
                 case other:
@@ -110,6 +123,13 @@ class Puzzle:
         max_x = max([pos.x for pos in all_positions])
         max_y = max([pos.y for pos in all_positions])
 
+        all_domino_end_pips = []
+        for domino in self.dominoes:
+            all_domino_end_pips.append(domino.end1)
+            all_domino_end_pips.append(domino.end2)
+
+        all_domino_end_pips = list(reversed(sorted(all_domino_end_pips)))
+
         return GridInfo(
             all_positions,
             set(all_positions),
@@ -117,7 +137,11 @@ class Puzzle:
             max_y,
             grid2region,
             all_sum_regions,
+            all_domino_end_pips,
         )
+
+    def get_sum_greater_upper_bound(self, gi: GridInfo, region_size: int) -> int:
+        return sum(gi.all_domino_end_pips_sorted_desc[:region_size])
 
     def generate_items(self, gi: GridInfo) -> None:
         primaries, secondaries = [], []
@@ -131,8 +155,23 @@ class Puzzle:
             match region.kind:
                 case EqualsRegion():
                     secondaries.append(f"R_{region.idx}")
-                case SumRegion(target=m):
-                    primaries.append(f"#R_{region.idx}[{m}:{m}]")
+                case SumRegion(target=m, operator=op):
+                    match op:
+                        case SumOperator.Equal:
+                            lower, upper = m, m
+                        case SumOperator.Greater:
+                            lower, upper = (
+                                m + 1,
+                                self.get_sum_greater_upper_bound(
+                                    gi, len(region.indices)
+                                ),
+                            )
+                        case SumOperator.Less:
+                            lower, upper = 0, m - 1
+
+                    assert upper >= lower
+
+                    primaries.append(f"#R_{region.idx}[{lower}:{upper}]")
                     for domino in self.dominoes:
                         for end, pips in enumerate([domino.end1, domino.end2]):
                             secondaries.append(f"E_{domino.idx}_{end}R_{region.idx}")
