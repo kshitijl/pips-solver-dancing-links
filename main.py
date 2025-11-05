@@ -180,10 +180,16 @@ class Puzzle:
     def sum_region(
         self, gi: GridInfo, pos: GridLoc, domino: Domino, end: int, row: List[str]
     ) -> None:
+        sum_regions_this_end_is_not_in = list(gi.all_sum_regions)
+
         region = gi.grid2region[pos]
         match region.kind:
             case SumRegion():
                 row.append(f"E_{domino.idx}_{end}R_{region.idx}:1")
+                sum_regions_this_end_is_not_in.remove(region)
+
+        for region in sum_regions_this_end_is_not_in:
+            row.append(f"E_{domino.idx}_{end}R_{region.idx}:0")
 
     def generate_options(self, gi: GridInfo) -> None:
         answer = []
@@ -202,11 +208,16 @@ class Puzzle:
                         if result is None:
                             continue
                         p1, p2, d1, d2, end1, end2 = result
+
                         row = [
                             f"d_{domino.idx}",
                             f"p_{p1.x}_{p1.y}",
                             f"p_{p2.x}_{p2.y}",
                         ]
+
+                        # This is to make it easier to read off the solution.
+                        if flipped:
+                            row[1], row[2] = row[2], row[1]
 
                         self.sum_region(gi, p1, domino, end1, row)
                         self.sum_region(gi, p2, domino, end2, row)
@@ -241,7 +252,6 @@ class Puzzle:
                                 row.append(f"E_{domino.idx}_{end}R_{region.idx}_W_{p}")
                             answer.append(" ".join(row))
                             for p in range(1, pips + 1):
-                                # TODO: GOTTA SET E_iR_j:0 when this domino is NOT in this region
                                 answer.append(
                                     f"E_{domino.idx}_{end}R_{region.idx}:1 E_{domino.idx}_{end}R_{region.idx}_W_{p} #R_{region.idx}"
                                 )
