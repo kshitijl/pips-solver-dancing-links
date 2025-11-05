@@ -1,0 +1,63 @@
+p1 p2 p3 p4 p5 p6 p7 p8 d1 d2 d3 d4 s1 s2 s3 | e1 s13 s17 s24 s38
+// d1 p1 p2 e1:5 e1:2
+d1 p2 p3 e1:5 s13:2
+d1 p2 p3 e1:2 s13:5
+d1 p3 p4 s13:2 s24:5
+d1 p3 p4 s13:5 s24:2
+d1 p5 p6 e1:5
+d1 p5 p6 e1:2
+d1 p6 p7 e1:5 s17:2
+d1 p6 p7 e1:2 s17:5
+d1 p1 p5 e1:5
+d1 p1 p5 e1:2
+// d1 p2 p6 e1:5 e1:2
+d1 p3 p7 s13:5 s17:2
+d1 p3 p7 s13:2 s17:5
+d1 p5 p8 s38:2
+d1 p5 p8 s38:5
+// d2 p1 p2 e1:1 e1:3
+d2 p2 p3 e1:1 s13:3
+d2 p2 p3 e1:3 s13:1
+d2 p3 p4 s13:1 s24:3
+d2 p3 p4 s13:3 s24:1
+d2 p5 p6 e1:1
+d2 p5 p6 e1:3
+d2 p6 p7 e1:1 s17:3
+d2 p6 p7 e1:3 s17:1
+d2 p1 p5 e1:1
+d2 p1 p5 e1:3
+// d2 p2 p6 e1:1 e1:3
+d2 p3 p7 s13:1 s17:3
+d2 p3 p7 s13:3 s17:1
+d2 p5 p8 s38:3
+d2 p5 p8 s38:1
+// d3 p1 p2 e1:4 e1:5
+d3 p2 p3 e1:4 s13:5
+d3 p2 p3 e1:5 s13:4
+d3 p3 p4 s13:4 s24:5
+d3 p3 p4 s13:5 s24:4
+d3 p5 p6 e1:4
+d3 p5 p6 e1:5
+d3 p6 p7 e1:4 s17:5
+d3 p6 p7 e1:5 s17:4
+d3 p1 p5
+// d3 p2 p6 e1:4 e1:5
+d3 p3 p7 s13:4 s17:5
+d3 p3 p7 s13:5 s17:4
+d3 p5 p8 s38:4
+d3 p5 p8 s38:5
+d4 p1 p2 e1:1
+d4 p2 p3 e1:1 s13:1
+d4 p3 p4 s13:1 s24:1
+d4 p5 p6 e1:1
+d4 p6 p7 e1:1 s17:1
+d4 p1 p5
+d4 p2 p6 e1:1
+d4 p3 p7 s13:1 s17:1
+d4 p5 p8 s38:1
+s1 s13:1 s17:4
+s1 s13:2 s17:3
+s1 s13:3 s17:2
+s1 s13:4 s17:1
+s2 s24:5
+s3 s38:5
