@@ -313,16 +313,38 @@ class Puzzle:
             pips_placed=pips_placed,
         )
 
-    def cannot_possibly_be_viable(self, region: UpdatedRegion) -> bool:
+    def sorted_all_pips_except(self, domino: Domino) -> List[int]:
+        all_dominos_except = [d for d in self.dominoes if d != domino]
+        all_pips_except = [pip for d in all_dominos_except for pip in [d.end1, d.end2]]
+
+        return list(sorted(all_pips_except))
+
+    def cannot_possibly_be_viable(
+        self, region: UpdatedRegion, pips_left: List[int]
+    ) -> bool:
+        top_n_pips_left = sum(pips_left[::-1][: region.size])
+        bot_n_pips_left = sum(pips_left[: region.size])
         match region.kind:
             case SumRegion(target=m, operator=SumOperator.Equal):
                 if m < 0:
+                    return True
+                if top_n_pips_left < m:
+                    return True
+                if bot_n_pips_left > m:
+                    return True
+            case SumRegion(target=m, operator=SumOperator.Greater):
+                if top_n_pips_left <= m:
+                    return True
+            case SumRegion(target=m, operator=SumOperator.Less):
+                if bot_n_pips_left >= m:
                     return True
 
         return False
 
     def generate_options(self, gi: GridInfo) -> None:
         answer = []
+        num_options_rejected = 0
+
         all_start_pos = [
             GridLoc(x, y) for x in range(gi.max_x + 1) for y in range(gi.max_y + 1)
         ]
@@ -342,16 +364,18 @@ class Puzzle:
                         # Here we apply a bunch of rules that try to figure out
                         # if this placement is immediately impossible.
                         affected_regions = self.get_affected_regions(gi, p1, p2, d1, d2)
-                        # TODO: compute updated domino set
+                        remaining_pips = self.sorted_all_pips_except(domino)
 
                         placement_is_viable = True
                         for affected_region in affected_regions:
-                            if self.cannot_possibly_be_viable(affected_region):
+                            if self.cannot_possibly_be_viable(
+                                affected_region, remaining_pips
+                            ):
                                 placement_is_viable = False
                                 break
 
                         if not placement_is_viable:
-                            print("Rejected option", file=sys.stderr)
+                            num_options_rejected += 1
                             continue
 
                         row = [
@@ -412,6 +436,7 @@ class Puzzle:
                             f"E_{domino.idx}_{end}R_{region.idx}:1 E_{domino.idx}_{end}R_{region.idx}_W_{p} #R_{region.idx}"
                         )
 
+        print(f"Rejected {num_options_rejected} options", file=sys.stderr)
         print("\n".join(answer))
 
     def generate_mcc(self) -> None:
