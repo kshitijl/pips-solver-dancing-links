@@ -30,6 +30,11 @@ class EqualsRegion:
     pass
 
 
+@dataclass
+class UnequalRegion:
+    pass
+
+
 class SumOperator(Enum):
     Equal = 0
     Greater = 1
@@ -42,7 +47,7 @@ class SumRegion:
     operator: SumOperator
 
 
-type RegionType = EmptyRegion | EqualsRegion | SumRegion
+type RegionType = EmptyRegion | EqualsRegion | SumRegion | UnequalRegion
 
 
 @dataclass
@@ -85,6 +90,8 @@ class Puzzle:
             match region["type"]:
                 case "equals":
                     kind = EqualsRegion()
+                case "unequal":
+                    kind = UnequalRegion()
                 case "sum":
                     kind = SumRegion(region["target"], SumOperator.Equal)
                 case "greater":
@@ -155,6 +162,11 @@ class Puzzle:
             match region.kind:
                 case EqualsRegion():
                     secondaries.append(f"R_{region.idx}")
+                case UnequalRegion():
+                    min_pips = gi.all_domino_end_pips_sorted_desc[-1]
+                    max_pips = gi.all_domino_end_pips_sorted_desc[0]
+                    for pip in range(min_pips, max_pips + 1):
+                        secondaries.append(f"R_{region.idx}W_{pip}")
                 case SumRegion(target=m, operator=op):
                     match op:
                         case SumOperator.Equal:
@@ -230,6 +242,21 @@ class Puzzle:
         for region in sum_regions_this_end_is_not_in:
             row.append(f"E_{domino.idx}_{end}R_{region.idx}:0")
 
+    def unequal_region(
+        self,
+        gi: GridInfo,
+        pos: GridLoc,
+        domino: Domino,
+        end: int,
+    ) -> str | None:
+        region = gi.grid2region[pos]
+        match region.kind:
+            case UnequalRegion():
+                pips = [domino.end1, domino.end2][end]
+                return f"R_{region.idx}W_{pips}"
+
+        return None
+
     def generate_options(self, gi: GridInfo) -> None:
         answer = []
         all_start_pos = [
@@ -260,6 +287,19 @@ class Puzzle:
 
                         self.sum_region(gi, p1, domino, end1, row)
                         self.sum_region(gi, p2, domino, end2, row)
+
+                        uer1 = self.unequal_region(gi, p1, domino, end1)
+                        uer2 = self.unequal_region(gi, p2, domino, end2)
+
+                        if uer1 == uer2 and uer1 is not None:
+                            # Placing a domino here will immediately violate an
+                            # unequal region constraint; skip.
+                            continue
+
+                        if uer1 is not None:
+                            row.append(uer1)
+                        if uer2 is not None:
+                            row.append(uer2)
 
                         ero1 = self.equals_region(gi, p1)
                         ero2 = self.equals_region(gi, p2)
