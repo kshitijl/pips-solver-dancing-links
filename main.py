@@ -55,6 +55,18 @@ class Region:
     idx: int
     kind: RegionType
     indices: List[GridLoc]
+    skip_because_zero_region: bool
+
+
+@dataclass
+class UpdatedRegion:
+    """Data we need to decide whether to reject a candidate placement of a domino
+    that intersects a region.
+    """
+
+    kind: RegionType  # with updated target
+    size: int
+    pips_placed: List[int]
 
 
 @dataclass
@@ -87,12 +99,15 @@ class Puzzle:
         regions = []
         for idx, region in enumerate(puzzle_dict["regions"]):
             kind: RegionType
+            skip_because_zero_region = False
             match region["type"]:
                 case "equals":
                     kind = EqualsRegion()
                 case "unequal":
                     kind = UnequalRegion()
                 case "sum":
+                    if region["target"] == 0:
+                        skip_because_zero_region = True
                     kind = SumRegion(region["target"], SumOperator.Equal)
                 case "greater":
                     kind = SumRegion(region["target"], SumOperator.Greater)
@@ -107,7 +122,7 @@ class Puzzle:
             for [x, y] in region["indices"]:
                 indices.append(GridLoc(x, y))
 
-            regions.append(Region(idx, kind, indices))
+            regions.append(Region(idx, kind, indices, skip_because_zero_region))
 
         return cls(regions, dominoes)
 
@@ -119,7 +134,8 @@ class Puzzle:
         for region in self.regions:
             match region.kind:
                 case SumRegion():
-                    all_sum_regions.append(region)
+                    if not region.skip_because_zero_region:
+                        all_sum_regions.append(region)
 
             for gridloc in region.indices:
                 all_positions.append(gridloc)
@@ -159,6 +175,8 @@ class Puzzle:
             primaries.append(f"d_{idx}")
 
         for region in self.regions:
+            if region.skip_because_zero_region:
+                continue
             match region.kind:
                 case EqualsRegion():
                     secondaries.append(f"R_{region.idx}")
@@ -202,6 +220,10 @@ class Puzzle:
         orientation: Orientation,
         flipped: bool,
     ) -> Tuple[GridLoc, GridLoc, int, int, int, int] | None:
+        """
+        Returns None if a domino in the given orientation cannot be placed with
+        its first (top or left) end at [start_pos].
+        """
         if start_pos not in gi.all_positions_set:
             return None
 
@@ -236,8 +258,9 @@ class Puzzle:
         region = gi.grid2region[pos]
         match region.kind:
             case SumRegion():
-                row.append(f"E_{domino.idx}_{end}R_{region.idx}:1")
-                sum_regions_this_end_is_not_in.remove(region)
+                if not region.skip_because_zero_region:
+                    row.append(f"E_{domino.idx}_{end}R_{region.idx}:1")
+                    sum_regions_this_end_is_not_in.remove(region)
 
         for region in sum_regions_this_end_is_not_in:
             row.append(f"E_{domino.idx}_{end}R_{region.idx}:0")
@@ -257,6 +280,47 @@ class Puzzle:
 
         return None
 
+    def get_affected_regions(
+        self, gi: GridInfo, p1: GridLoc, p2: GridLoc, d1: int, d2: int
+    ) -> List[UpdatedRegion]:
+        region1 = gi.grid2region[p1]
+        region2 = gi.grid2region[p2]
+        if region1.idx == region2.idx:
+            return [self.updated_region_if_placed(gi, region1, [d1, d2], 2)]
+        else:
+            return [
+                self.updated_region_if_placed(gi, region1, [d1], 1),
+                self.updated_region_if_placed(gi, region2, [d2], 1),
+            ]
+
+    def updated_region_if_placed(
+        self,
+        gi: GridInfo,
+        region: Region,
+        pips_placed: List[int],
+        total_num_dominos_placed: int,
+    ) -> UpdatedRegion:
+        total_num_pips_placed = sum(pips_placed)
+        kind: RegionType
+        match region.kind:
+            case SumRegion(target=m, operator=op):
+                kind = SumRegion(target=m - total_num_pips_placed, operator=op)
+            case other:
+                kind = other
+        return UpdatedRegion(
+            kind,
+            size=len(region.indices) - total_num_dominos_placed,
+            pips_placed=pips_placed,
+        )
+
+    def cannot_possibly_be_viable(self, region: UpdatedRegion) -> bool:
+        match region.kind:
+            case SumRegion(target=m, operator=SumOperator.Equal):
+                if m < 0:
+                    return True
+
+        return False
+
     def generate_options(self, gi: GridInfo) -> None:
         answer = []
         all_start_pos = [
@@ -274,6 +338,21 @@ class Puzzle:
                         if result is None:
                             continue
                         p1, p2, d1, d2, end1, end2 = result
+
+                        # Here we apply a bunch of rules that try to figure out
+                        # if this placement is immediately impossible.
+                        affected_regions = self.get_affected_regions(gi, p1, p2, d1, d2)
+                        # TODO: compute updated domino set
+
+                        placement_is_viable = True
+                        for affected_region in affected_regions:
+                            if self.cannot_possibly_be_viable(affected_region):
+                                placement_is_viable = False
+                                break
+
+                        if not placement_is_viable:
+                            print("Rejected option", file=sys.stderr)
+                            continue
 
                         row = [
                             f"d_{domino.idx}",
@@ -321,42 +400,21 @@ class Puzzle:
 
                         answer.append(" ".join(row))
 
-        for region in self.regions:
-            match region.kind:
-                case SumRegion():
-                    for domino in self.dominoes:
-                        for end, pips in enumerate([domino.end1, domino.end2]):
-                            row = [f"E_{domino.idx}_{end}R_{region.idx}:0"]
-                            for p in range(1, pips + 1):
-                                row.append(f"E_{domino.idx}_{end}R_{region.idx}_W_{p}")
-                            answer.append(" ".join(row))
-                            for p in range(1, pips + 1):
-                                answer.append(
-                                    f"E_{domino.idx}_{end}R_{region.idx}:1 E_{domino.idx}_{end}R_{region.idx}_W_{p} #R_{region.idx}"
-                                )
+        for region in gi.all_sum_regions:
+            for domino in self.dominoes:
+                for end, pips in enumerate([domino.end1, domino.end2]):
+                    row = [f"E_{domino.idx}_{end}R_{region.idx}:0"]
+                    for p in range(1, pips + 1):
+                        row.append(f"E_{domino.idx}_{end}R_{region.idx}_W_{p}")
+                    answer.append(" ".join(row))
+                    for p in range(1, pips + 1):
+                        answer.append(
+                            f"E_{domino.idx}_{end}R_{region.idx}:1 E_{domino.idx}_{end}R_{region.idx}_W_{p} #R_{region.idx}"
+                        )
 
         print("\n".join(answer))
 
-    def has_zeros(self) -> bool:
-        for region in self.regions:
-            if hasattr(region.kind, "target"):
-                if region.kind.target == 0:
-                    return True
-
-        return False
-
-    def transform_to_get_rid_of_zeros(self) -> None:
-        for region in self.regions:
-            if hasattr(region.kind, "target"):
-                region.kind.target += len(region.indices)
-
-        for domino in self.dominoes:
-            domino.end1 += 1
-            domino.end2 += 1
-
     def generate_mcc(self) -> None:
-        if self.has_zeros():
-            self.transform_to_get_rid_of_zeros()
         gi = self.grid_info()
         self.generate_items(gi)
         self.generate_options(gi)
