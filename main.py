@@ -201,13 +201,13 @@ class Puzzle:
 
                     assert upper >= lower
 
-                    primaries.append(f"#R_{region.idx}[{lower}:{upper}]")
+                    primaries.append(f"R_{region.idx}[{lower}:{upper}]")
                     for domino in self.dominoes:
                         for end, pips in enumerate([domino.end1, domino.end2]):
                             secondaries.append(f"E_{domino.idx}_{end}R_{region.idx}")
                             for p in range(1, pips + 1):
                                 primaries.append(
-                                    f"E_{domino.idx}_{end}R_{region.idx}_W_{p}"
+                                    f"#E_{domino.idx}_{end}R_{region.idx}_W_{p}"
                                 )
 
         print(" ".join(primaries) + " | " + " ".join(secondaries))
@@ -429,11 +429,11 @@ class Puzzle:
                 for end, pips in enumerate([domino.end1, domino.end2]):
                     row = [f"E_{domino.idx}_{end}R_{region.idx}:0"]
                     for p in range(1, pips + 1):
-                        row.append(f"E_{domino.idx}_{end}R_{region.idx}_W_{p}")
+                        row.append(f"#E_{domino.idx}_{end}R_{region.idx}_W_{p}")
                     answer.append(" ".join(row))
                     for p in range(1, pips + 1):
                         answer.append(
-                            f"E_{domino.idx}_{end}R_{region.idx}:1 E_{domino.idx}_{end}R_{region.idx}_W_{p} #R_{region.idx}"
+                            f"E_{domino.idx}_{end}R_{region.idx}:1 #E_{domino.idx}_{end}R_{region.idx}_W_{p} R_{region.idx}"
                         )
 
         print(f"Rejected {num_options_rejected} options", file=sys.stderr)
