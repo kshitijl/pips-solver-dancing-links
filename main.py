@@ -338,6 +338,14 @@ class Puzzle:
             case SumRegion(target=m, operator=SumOperator.Less):
                 if bot_n_pips_left >= m:
                     return True
+            case EqualsRegion():
+                pips_placed = set(region.pips_placed)
+                if len(pips_placed) > 1:
+                    return True
+                pip_placed = pips_placed.pop()
+                m = pips_left.count(pip_placed)
+                if m < region.size:
+                    return True
 
         return False
 
