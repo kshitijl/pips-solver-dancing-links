@@ -349,6 +349,7 @@ class Puzzle:
             GridLoc(x, y) for x in range(gi.max_x + 1) for y in range(gi.max_y + 1)
         ]
         for domino in self.dominoes:
+            remaining_pips = self.sorted_all_pips_except(domino)
             for orientation in [Orientation.Horizontal, Orientation.Vertical]:
                 for flipped in [False, True]:
                     if domino.end1 == domino.end2 and flipped:
@@ -364,7 +365,6 @@ class Puzzle:
                         # Here we apply a bunch of rules that try to figure out
                         # if this placement is immediately impossible.
                         affected_regions = self.get_affected_regions(gi, p1, p2, d1, d2)
-                        remaining_pips = self.sorted_all_pips_except(domino)
 
                         placement_is_viable = True
                         for affected_region in affected_regions:
