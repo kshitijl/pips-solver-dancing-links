@@ -15,3 +15,7 @@ download-todays:
 
 download-for-date date:
     wget -P data/ https://www.nytimes.com/svc/pips/v1/{{date}}.json
+
+[working-directory: 'notebooks']
+notebook:
+    uv run --with jupyter jupyter lab
