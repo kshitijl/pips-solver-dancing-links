@@ -8,7 +8,10 @@ convert date='2025-11-04' difficulty='easy':
     uv run main.py data/{{date}}.json -d "{{difficulty}}"
 
 solve date='2025-11-04' difficulty='easy':
-    uv run main.py data/{{date}}.json -d "{{difficulty}}" > generated-mcc-instances/{{date}}-{{difficulty}} && time ../cover/bin/mcc -v0 generated-mcc-instances/{{date}}-{{difficulty}}
+    uv run main.py data/{{date}}.json -d "{{difficulty}}" > generated-mcc-instances/{{date}}-{{difficulty}} && time ./mcc -v0 generated-mcc-instances/{{date}}-{{difficulty}}
 
 download-todays:
     wget -P data/ https://www.nytimes.com/svc/pips/v1/$(date -I).json
+
+download-for-date date:
+    wget -P data/ https://www.nytimes.com/svc/pips/v1/{{date}}.json
