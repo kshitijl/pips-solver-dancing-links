@@ -289,6 +289,8 @@ class Puzzle:
             pips_in_region = [(r1, d1), (r2, d2)]
 
         for region, pips in pips_in_region:
+            if pips == 0:
+                continue
             match region.kind:
                 case SumRegion():
                     if not region.skip_because_zero_region:

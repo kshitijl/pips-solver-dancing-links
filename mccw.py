@@ -112,6 +112,7 @@ class Problem:
 
                 new_option_idxs: List[int] = []
                 # print(f"covered items: {covered_items}")
+                # print(f"colored items: {colored_items}")
                 for option_idx in self.open_option_idxs:
                     if option_idx == option_to_try_idx:
                         continue
@@ -145,7 +146,9 @@ class Problem:
                         new_option_idxs.append(option_idx)
 
                 already_branched_on.add(option_to_try_idx)
-                # print(f"new items: {new_items}, new option idxs: {new_option_idxs}")
+                # print(
+                #     f"new items: {new_primary_items}, secondary {new_secondary_items}, new option idxs: {new_option_idxs}"
+                # )
                 new_problem = Problem(
                     new_primary_items,
                     new_secondary_items,
@@ -203,6 +206,8 @@ def load_problem(filename: str) -> Problem:
                 if m1:
                     item_name, weight_s = m1.groups()
                     weight = int(weight_s)
+                    if weight == 0:
+                        raise ValueError("Illegal weight 0")
                     got_weight = True
                     # print("got weight")
                 elif m2:
@@ -248,7 +253,7 @@ def main() -> None:
 
     problem = load_problem(args.input_file)
 
-    print(problem)
+    # print(problem)
 
     problem.solve()
 
