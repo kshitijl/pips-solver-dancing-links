@@ -41,8 +41,17 @@ class Problem:
 
     def solve_(self, current_solution: List[int]) -> None:
         # If no items remain to be covered, print solution and return.
-        if len(self.items) == 0:
-            print("Found solution!")
+        if (
+            len(
+                [
+                    1
+                    for (item, data) in self.items.items()
+                    if isinstance(data, PrimaryItemData)
+                ]
+            )
+            == 0
+        ):
+            print(f"\n\nFound solution! {current_solution}")
             for option_idx in current_solution:
                 print(self.options[option_idx])
             return
@@ -52,7 +61,9 @@ class Problem:
 
         # Choose an item to cover, using MRV heuristic
         item_to_cover, min_len = None, 1000000
-        for item in self.items.keys():
+        for item, data in self.items.items():
+            if isinstance(data, SecondaryItemData):
+                continue
             options_for_item = len(
                 [
                     1
@@ -64,9 +75,22 @@ class Problem:
                 min_len = options_for_item
                 item_to_cover = item
 
+        assert item_to_cover is not None
+        remaining_weight = 0
+        for oidx in self.open_option_idxs:
+            o = self.options[oidx]
+            if item_to_cover in o:
+                remaining_weight += o[item_to_cover].weight
+        if remaining_weight < self.items[item_to_cover].bound:
+            return
+
         # print(f"\n\nChoosing item {item_to_cover} to cover with {min_len} open options")
 
         # Iterate over all options with that item that don't push its bound below 0
+        # Also! We cannot include any option indices that we've already branched over.
+        # I think this is (part of) what Knuth is doing with tweaking.
+
+        already_branched_on: Set[int] = set()
         for option_to_try_idx in self.open_option_idxs:
             option_to_try = self.options[option_to_try_idx]
             if item_to_cover in option_to_try:
@@ -97,6 +121,8 @@ class Problem:
                 for option_idx in self.open_option_idxs:
                     if option_idx == option_to_try_idx:
                         continue
+                    if option_idx in already_branched_on:
+                        continue
                     compatible = True
                     if not self.options[option_idx].keys().isdisjoint(covered_items):
                         compatible = False
@@ -114,6 +140,7 @@ class Problem:
                     if compatible:
                         new_option_idxs.append(option_idx)
 
+                already_branched_on.add(option_to_try_idx)
                 # print(f"new items: {new_items}, new option idxs: {new_option_idxs}")
                 new_problem = Problem(new_items, self.options, new_option_idxs)
                 new_problem.solve_(current_solution + [option_to_try_idx])
