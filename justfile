@@ -2,7 +2,7 @@ default:
     @just --list
 
 check:
-    uv run mypy --strict main.py && uvx ty check
+    uv run mypy --strict main.py mccw.py && uvx ty check
 
 convert date='2025-11-04' difficulty='easy':
     uv run main.py data/{{date}}.json -d "{{difficulty}}"
