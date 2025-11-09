@@ -9,8 +9,9 @@ import argparse
 class Problem:
     items: Set[str]
     options: List[Set[str]]
+    open_option_idxs: List[int]
 
-    def solve_(self, current_solution: List[str]):
+    def solve_(self, current_solution: List[int]):
         # If no items remain to be covered, print solution and return.
         if len(self.items) == 0:
             print("Found solution!")
@@ -21,10 +22,21 @@ class Problem:
             return
 
         # Choose an item to cover.
-        item_to_cover = next(iter(self.items))
+        item_to_cover, max_len = None, 1000000
+        for item in self.items:
+            options_for_item = len(
+                [
+                    1
+                    for option_idx in self.open_option_idxs
+                    if item in self.options[option_idx]
+                ]
+            )
+            if options_for_item < max_len:
+                max_len = options_for_item
+                item_to_cover = item
 
         # Iterate over all options with that item
-        for option_to_try in self.options:
+        for option_to_try in [self.options[i] for i in self.open_option_idxs]:
             if item_to_cover in option_to_try:
                 new_items = self.items.copy()
                 covered_items = set()
@@ -32,13 +44,13 @@ class Problem:
                     new_items.remove(item)
                     covered_items.add(item)
 
-                new_options = [
-                    option.copy()
-                    for option in self.options
-                    if option.isdisjoint(covered_items)
+                new_options_idxs = [
+                    option_idx
+                    for option_idx in self.open_option_idxs
+                    if self.options[option_idx].isdisjoint(covered_items)
                 ]
 
-                new_problem = Problem(new_items, new_options)
+                new_problem = Problem(new_items, self.options, new_options_idxs)
                 new_problem.solve_(current_solution + [option_to_try])
 
     def solve(self):
@@ -58,7 +70,9 @@ def load_problem(filename: str) -> Problem:
                     raise KeyError(f"Unknown item {item} in option {option}")
             options.append(set(option))
 
-    return Problem(items, options)
+    open_option_idxs = list(range(len(options)))
+
+    return Problem(items, options, open_option_idxs)
 
 
 def main() -> None:
