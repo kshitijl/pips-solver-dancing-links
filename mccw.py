@@ -17,9 +17,6 @@ class SecondaryItemData:
     color: int | None
 
 
-type ItemData = PrimaryItemData | SecondaryItemData
-
-
 @dataclass
 class PrimaryOptionData:
     weight: int
@@ -30,27 +27,22 @@ class SecondaryOptionData:
     color: int | None
 
 
-type OptionData = PrimaryOptionData | SecondaryOptionData
+@dataclass
+class Option:
+    primaries: Dict[str, PrimaryOptionData]
+    secondaries: Dict[str, SecondaryOptionData]
 
 
 @dataclass
 class Problem:
-    items: Dict[str, ItemData]
-    options: List[Dict[str, OptionData]]
+    primary_items: Dict[str, PrimaryItemData]
+    secondary_items: Dict[str, SecondaryItemData]
+    options: List[Option]
     open_option_idxs: List[int]
 
     def solve_(self, current_solution: List[int]) -> None:
-        # If no items remain to be covered, print solution and return.
-        if (
-            len(
-                [
-                    1
-                    for (item, data) in self.items.items()
-                    if isinstance(data, PrimaryItemData)
-                ]
-            )
-            == 0
-        ):
+        # If no primary items remain to be covered, print solution and return.
+        if len(self.primary_items) == 0:
             print(f"\n\nFound solution! {current_solution}")
             for option_idx in current_solution:
                 print(self.options[option_idx])
@@ -59,16 +51,14 @@ class Problem:
         if len(self.options) == 0:
             return
 
-        # Choose an item to cover, using MRV heuristic
+        # Choose a primary item to cover, using MRV heuristic
         item_to_cover, min_len = None, 1000000
-        for item, data in self.items.items():
-            if isinstance(data, SecondaryItemData):
-                continue
+        for item, data in self.primary_items.items():
             options_for_item = len(
                 [
                     1
                     for option_idx in self.open_option_idxs
-                    if item in self.options[option_idx]
+                    if item in self.options[option_idx].primaries
                 ]
             )
             if options_for_item < min_len:
@@ -76,12 +66,15 @@ class Problem:
                 item_to_cover = item
 
         assert item_to_cover is not None
+
         remaining_weight = 0
         for oidx in self.open_option_idxs:
             o = self.options[oidx]
-            if item_to_cover in o:
-                remaining_weight += o[item_to_cover].weight
-        if remaining_weight < self.items[item_to_cover].bound:
+            if item_to_cover in o.primaries:
+                remaining_weight += o.primaries[item_to_cover].weight
+
+        # The total remaining weight cannot possibly cover this item; return early.
+        if remaining_weight < self.primary_items[item_to_cover].bound:
             return
 
         # print(f"\n\nChoosing item {item_to_cover} to cover with {min_len} open options")
@@ -93,28 +86,29 @@ class Problem:
         already_branched_on: Set[int] = set()
         for option_to_try_idx in self.open_option_idxs:
             option_to_try = self.options[option_to_try_idx]
-            if item_to_cover in option_to_try:
+            if item_to_cover in option_to_try.primaries:
                 # print(f"Trying option {option_to_try_idx}: {option_to_try}")
-                new_items = copy.deepcopy(self.items)
+                new_primary_items = copy.deepcopy(self.primary_items)
+                new_secondary_items = copy.deepcopy(self.secondary_items)
                 covered_items = set()
                 colored_items: Dict[str, int] = {}
-                for item, option_data in option_to_try.items():
-                    match option_data:
-                        case PrimaryOptionData(weight=weight):
-                            item_data = new_items[item]
-                            assert isinstance(item_data, PrimaryItemData)
-                            item_data.bound -= weight
-                            if item_data.bound == 0:
-                                del new_items[item]
-                                covered_items.add(item)
-                            if item_data.bound < 0:
-                                assert False
-                        case SecondaryOptionData(color=color):
-                            if color is not None:
-                                item_data = new_items[item]
-                                assert isinstance(item_data, SecondaryItemData)
-                                item_data.color = color
-                                colored_items[item] = color
+
+                for item, poption_data in option_to_try.primaries.items():
+                    pitem_data = new_primary_items[item]
+                    weight = poption_data.weight
+                    pitem_data.bound -= weight
+                    if pitem_data.bound == 0:
+                        del new_primary_items[item]
+                        covered_items.add(item)
+                    if pitem_data.bound < 0:
+                        assert False
+
+                for item, soption_data in option_to_try.secondaries.items():
+                    sitem_data = new_secondary_items[item]
+                    color = soption_data.color
+                    if color is not None:
+                        sitem_data.color = color
+                        colored_items[item] = color
 
                 new_option_idxs: List[int] = []
                 # print(f"covered items: {covered_items}")
@@ -124,25 +118,40 @@ class Problem:
                     if option_idx in already_branched_on:
                         continue
                     compatible = True
-                    if not self.options[option_idx].keys().isdisjoint(covered_items):
+                    if (
+                        not self.options[option_idx]
+                        .primaries.keys()
+                        .isdisjoint(covered_items)
+                    ):
                         compatible = False
                         continue
-                    for item_name, option_data in self.options[option_idx].items():
+
+                    for item_name, poption_data in self.options[
+                        option_idx
+                    ].primaries.items():
+                        if poption_data.weight > new_primary_items[item_name].bound:
+                            compatible = False
+                            break
+
+                    for item_name, soption_data in self.options[
+                        option_idx
+                    ].secondaries.items():
                         if item_name in colored_items:
-                            assert isinstance(option_data, SecondaryOptionData)
-                            if option_data.color != colored_items[item_name]:
+                            if soption_data.color != colored_items[item_name]:
                                 compatible = False
                                 break
-                        if isinstance(option_data, PrimaryOptionData):
-                            if option_data.weight > new_items[item_name].bound:
-                                compatible = False
-                                break
+
                     if compatible:
                         new_option_idxs.append(option_idx)
 
                 already_branched_on.add(option_to_try_idx)
                 # print(f"new items: {new_items}, new option idxs: {new_option_idxs}")
-                new_problem = Problem(new_items, self.options, new_option_idxs)
+                new_problem = Problem(
+                    new_primary_items,
+                    new_secondary_items,
+                    self.options,
+                    new_option_idxs,
+                )
                 new_problem.solve_(current_solution + [option_to_try_idx])
 
     def solve(self) -> None:
@@ -150,8 +159,9 @@ class Problem:
 
 
 def load_problem(filename: str) -> Problem:
-    items: Dict[str, ItemData] = {}
-    options: List[Dict[str, OptionData]] = []
+    primary_items: Dict[str, PrimaryItemData] = {}
+    secondary_items: Dict[str, SecondaryItemData] = {}
+    options: List[Option] = []
 
     with open(filename) as f:
         lines = f.readlines()
@@ -176,18 +186,15 @@ def load_problem(filename: str) -> Problem:
                     f"Unsupported: upper bound {upper} != lower bound {lower} for {item_name}"
                 )
 
-            item_data: ItemData
-
             if in_primary_items_section:
-                item_data = PrimaryItemData(bound=lower)
+                primary_items[item_name] = PrimaryItemData(bound=lower)
             else:
-                item_data = SecondaryItemData(color=None)
-
-            items[item_name] = item_data
+                secondary_items[item_name] = SecondaryItemData(color=None)
 
         for line in lines[1:]:
             option = line.strip().split(" ")
-            option_dict = {}
+            option_primaries: Dict[str, PrimaryOptionData] = {}
+            option_secondaries: Dict[str, SecondaryOptionData] = {}
 
             for item in option:
                 got_weight, got_color = False, False
@@ -206,32 +213,32 @@ def load_problem(filename: str) -> Problem:
                 else:
                     item_name, weight, color = item, 1, None
 
-                if item_name not in items:
+                if item_name not in primary_items and item_name not in secondary_items:
                     # print(items)
                     raise KeyError(f"Unknown item {item_name} in option {option}")
 
-                option_data: OptionData
-                if isinstance(items[item_name], PrimaryItemData):
+                if item_name in primary_items:
                     if got_color:
                         raise ValueError(
                             f"Got color {color} for primary item {item_name}"
                         )
-                    option_data = PrimaryOptionData(weight=weight)
+                    option_primaries[item_name] = PrimaryOptionData(weight=weight)
 
-                if isinstance(items[item_name], SecondaryItemData):
+                if item_name in secondary_items:
                     if got_weight:
                         # print(item, option)
                         raise ValueError(
                             f"Got weight {weight} for secondary item {item_name}"
                         )
-                    option_data = SecondaryOptionData(color=color)
+                    option_secondaries[item_name] = SecondaryOptionData(color=color)
 
-                option_dict[item_name] = option_data
-            options.append(option_dict)
+            options.append(
+                Option(primaries=option_primaries, secondaries=option_secondaries)
+            )
 
     open_option_idxs = list(range(len(options)))
 
-    return Problem(items, options, open_option_idxs)
+    return Problem(primary_items, secondary_items, options, open_option_idxs)
 
 
 def main() -> None:
