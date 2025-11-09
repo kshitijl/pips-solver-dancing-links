@@ -166,7 +166,7 @@ class Puzzle:
     def get_sum_greater_upper_bound(self, gi: GridInfo, region_size: int) -> int:
         return sum(gi.all_domino_end_pips_sorted_desc[:region_size])
 
-    def generate_items(self, gi: GridInfo) -> None:
+    def generate_items(self, gi: GridInfo, weighted_solver: bool) -> None:
         primaries, secondaries = [], []
         for gridloc in gi.all_positions:
             primaries.append(f"p_{gridloc.x}_{gridloc.y}")
@@ -202,13 +202,17 @@ class Puzzle:
                     assert upper >= lower
 
                     primaries.append(f"R_{region.idx}[{lower}:{upper}]")
-                    for domino in self.dominoes:
-                        for end, pips in enumerate([domino.end1, domino.end2]):
-                            secondaries.append(f"E_{domino.idx}_{end}R_{region.idx}")
-                            for p in range(1, pips + 1):
-                                primaries.append(
-                                    f"#E_{domino.idx}_{end}R_{region.idx}_W_{p}"
+
+                    if not weighted_solver:
+                        for domino in self.dominoes:
+                            for end, pips in enumerate([domino.end1, domino.end2]):
+                                secondaries.append(
+                                    f"E_{domino.idx}_{end}R_{region.idx}"
                                 )
+                                for p in range(1, pips + 1):
+                                    primaries.append(
+                                        f"#E_{domino.idx}_{end}R_{region.idx}_W_{p}"
+                                    )
 
         print(" ".join(primaries) + " | " + " ".join(secondaries))
 
@@ -250,7 +254,7 @@ class Puzzle:
 
         return None
 
-    def sum_region(
+    def sum_region_no_weights(
         self, gi: GridInfo, pos: GridLoc, domino: Domino, end: int, row: List[str]
     ) -> None:
         sum_regions_this_end_is_not_in = list(gi.all_sum_regions)
@@ -264,6 +268,31 @@ class Puzzle:
 
         for region in sum_regions_this_end_is_not_in:
             row.append(f"E_{domino.idx}_{end}R_{region.idx}:0")
+
+    def sum_region_weights(
+        self,
+        gi: GridInfo,
+        p1: GridLoc,
+        p2: GridLoc,
+        d1: int,
+        d2: int,
+        row: List[str],
+    ) -> None:
+        r1 = gi.grid2region[p1]
+        r2 = gi.grid2region[p2]
+
+        pips_in_region = []
+
+        if r1.idx == r2.idx:
+            pips_in_region = [(r1, d1 + d2)]
+        else:
+            pips_in_region = [(r1, d1), (r2, d2)]
+
+        for region, pips in pips_in_region:
+            match region.kind:
+                case SumRegion():
+                    if not region.skip_because_zero_region:
+                        row.append(f"R_{region.idx}={pips}")
 
     def unequal_region(
         self,
@@ -349,7 +378,7 @@ class Puzzle:
 
         return False
 
-    def generate_options(self, gi: GridInfo) -> None:
+    def generate_options(self, gi: GridInfo, weighted_solver: bool) -> None:
         answer = []
         num_options_rejected = 0
 
@@ -396,8 +425,11 @@ class Puzzle:
                         if flipped:
                             row[1], row[2] = row[2], row[1]
 
-                        self.sum_region(gi, p1, domino, end1, row)
-                        self.sum_region(gi, p2, domino, end2, row)
+                        if weighted_solver:
+                            self.sum_region_weights(gi, p1, p2, d1, d2, row)
+                        else:
+                            self.sum_region_no_weights(gi, p1, domino, end1, row)
+                            self.sum_region_no_weights(gi, p2, domino, end2, row)
 
                         uer1 = self.unequal_region(gi, p1, domino, end1)
                         uer2 = self.unequal_region(gi, p2, domino, end2)
@@ -432,25 +464,26 @@ class Puzzle:
 
                         answer.append(" ".join(row))
 
-        for region in gi.all_sum_regions:
-            for domino in self.dominoes:
-                for end, pips in enumerate([domino.end1, domino.end2]):
-                    row = [f"E_{domino.idx}_{end}R_{region.idx}:0"]
-                    for p in range(1, pips + 1):
-                        row.append(f"#E_{domino.idx}_{end}R_{region.idx}_W_{p}")
-                    answer.append(" ".join(row))
-                    for p in range(1, pips + 1):
-                        answer.append(
-                            f"E_{domino.idx}_{end}R_{region.idx}:1 #E_{domino.idx}_{end}R_{region.idx}_W_{p} R_{region.idx}"
-                        )
+        if not weighted_solver:
+            for region in gi.all_sum_regions:
+                for domino in self.dominoes:
+                    for end, pips in enumerate([domino.end1, domino.end2]):
+                        row = [f"E_{domino.idx}_{end}R_{region.idx}:0"]
+                        for p in range(1, pips + 1):
+                            row.append(f"#E_{domino.idx}_{end}R_{region.idx}_W_{p}")
+                        answer.append(" ".join(row))
+                        for p in range(1, pips + 1):
+                            answer.append(
+                                f"E_{domino.idx}_{end}R_{region.idx}:1 #E_{domino.idx}_{end}R_{region.idx}_W_{p} R_{region.idx}"
+                            )
 
         print(f"Rejected {num_options_rejected} options", file=sys.stderr)
         print("\n".join(answer))
 
-    def generate_mcc(self) -> None:
+    def generate_mcc(self, weighted_solver: bool) -> None:
         gi = self.grid_info()
-        self.generate_items(gi)
-        self.generate_options(gi)
+        self.generate_items(gi, weighted_solver)
+        self.generate_options(gi, weighted_solver)
 
 
 def main() -> None:
@@ -462,10 +495,17 @@ def main() -> None:
         type=str,
         help="which puzzle in the input file to solve",
     )
+    parser.add_argument(
+        "--weighted",
+        "-w",
+        default=False,
+        action="store_true",
+        help="The solver supports weights, so don't generate auxiliary counting items and options",
+    )
     args = parser.parse_args()
     puzzle = Puzzle.load(json.load(open(args.input_file))[args.difficulty])
     # print(json.dumps(asdict(puzzle), indent=2))
-    puzzle.generate_mcc()
+    puzzle.generate_mcc(args.weighted)
 
 
 if __name__ == "__main__":
