@@ -1,15 +1,26 @@
 import sys
 import re
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, asdict
 from typing import List, Dict, Set, Any, Tuple
 from enum import Enum
 import argparse
 import copy
 
+num_solutions = 0
+debug_print = False
+print_solution_details = False
+
 
 @dataclass
 class PrimaryItemData:
     bound: int
+    slack: int
+
+    def within_limits(self):
+        if self.bound >= 0 and self.bound <= self.slack:
+            return True
+        return False
 
 
 @dataclass
@@ -40,12 +51,21 @@ class Problem:
     options: List[Option]
     open_option_idxs: List[int]
 
+    def all_primaries_within_limits(self) -> bool:
+        for item in self.primary_items.values():
+            if not item.within_limits():
+                return False
+        return True
+
     def solve_(self, current_solution: List[int]) -> None:
+        global num_solutions
         # If no primary items remain to be covered, print solution and return.
-        if len(self.primary_items) == 0:
-            print(f"\n\nFound solution! {current_solution}")
-            for option_idx in current_solution:
-                print(self.options[option_idx])
+        if len(self.primary_items) == 0 or self.all_primaries_within_limits():
+            print(f"Found solution! {current_solution}")
+            num_solutions += 1
+            if print_solution_details:
+                for option_idx in current_solution:
+                    print(self.options[option_idx])
             return
 
         if len(self.options) == 0:
@@ -54,6 +74,8 @@ class Problem:
         # Choose a primary item to cover, using MRV heuristic
         item_to_cover, min_len = None, 1000000
         for item, data in self.primary_items.items():
+            if data.within_limits():
+                continue
             options_for_item = len(
                 [
                     1
@@ -67,17 +89,25 @@ class Problem:
 
         assert item_to_cover is not None
 
+        if debug_print:
+            print(
+                f"\n\nChoosing item {item_to_cover} to cover with {min_len} open options"
+            )
+
         remaining_weight = 0
         for oidx in self.open_option_idxs:
             o = self.options[oidx]
             if item_to_cover in o.primaries:
                 remaining_weight += o.primaries[item_to_cover].weight
 
-        # The total remaining weight cannot possibly cover this item; return early.
-        if remaining_weight < self.primary_items[item_to_cover].bound:
+        # The total remaining weight cannot possibly cover this item; return early,
+        idata = self.primary_items[item_to_cover]
+        if remaining_weight < idata.bound - idata.slack:
+            if debug_print:
+                print(
+                    f"Remaining weight {remaining_weight} is too small to satisfy limits on {idata}"
+                )
             return
-
-        # print(f"\n\nChoosing item {item_to_cover} to cover with {min_len} open options")
 
         # Iterate over all options with that item that don't push its bound below 0
         # Also! We cannot include any option indices that we've already branched over.
@@ -87,7 +117,8 @@ class Problem:
         for option_to_try_idx in self.open_option_idxs:
             option_to_try = self.options[option_to_try_idx]
             if item_to_cover in option_to_try.primaries:
-                # print(f"Trying option {option_to_try_idx}: {option_to_try}")
+                if debug_print:
+                    print(f"Trying option {option_to_try_idx}: {option_to_try}")
                 new_primary_items = copy.deepcopy(self.primary_items)
                 new_secondary_items = copy.deepcopy(self.secondary_items)
                 covered_items = set()
@@ -111,8 +142,9 @@ class Problem:
                         colored_items[item] = color
 
                 new_option_idxs: List[int] = []
-                # print(f"covered items: {covered_items}")
-                # print(f"colored items: {colored_items}")
+                if debug_print:
+                    print(f"covered items: {covered_items}")
+                    print(f"colored items: {colored_items}")
                 for option_idx in self.open_option_idxs:
                     if option_idx == option_to_try_idx:
                         continue
@@ -146,9 +178,10 @@ class Problem:
                         new_option_idxs.append(option_idx)
 
                 already_branched_on.add(option_to_try_idx)
-                # print(
-                #     f"new items: {new_primary_items}, secondary {new_secondary_items}, new option idxs: {new_option_idxs}"
-                # )
+                if debug_print:
+                    print(
+                        f"new items: {new_primary_items}, secondary {new_secondary_items}, new option idxs: {new_option_idxs}"
+                    )
                 new_problem = Problem(
                     new_primary_items,
                     new_secondary_items,
@@ -179,18 +212,24 @@ def load_problem(filename: str) -> Problem:
             if m:
                 if not in_primary_items_section:
                     raise ValueError(f"Secondary item {item} has multiplicity")
-                item_name, upper, lower = m.groups()
+                item_name, lower, upper = m.groups()
                 upper, lower = int(upper), int(lower)
             else:
                 item_name, upper, lower = item, 1, 1
 
-            if upper != lower:
-                raise ValueError(
-                    f"Unsupported: upper bound {upper} != lower bound {lower} for {item_name}"
-                )
+            if lower < 0:
+                raise ValueError(f"Bad lower bound {lower}")
+            if upper < lower or upper == 0:
+                raise ValueError(f"Bad upper bound {upper}")
+
+            assert upper >= lower
+            assert lower >= 0
+            assert upper > 0
 
             if in_primary_items_section:
-                primary_items[item_name] = PrimaryItemData(bound=lower)
+                primary_items[item_name] = PrimaryItemData(
+                    bound=upper, slack=upper - lower
+                )
             else:
                 secondary_items[item_name] = SecondaryItemData(color=None)
 
@@ -253,9 +292,12 @@ def main() -> None:
 
     problem = load_problem(args.input_file)
 
-    # print(problem)
+    if debug_print:
+        print(json.dumps(asdict(problem), indent=2))
 
     problem.solve()
+
+    print(f"Found {num_solutions} total solutions")
 
 
 if __name__ == "__main__":
