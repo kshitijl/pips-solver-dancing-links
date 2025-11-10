@@ -198,10 +198,18 @@ class Problem:
         return self.solve_([])
 
 
+def get_unique_color(seen_colors: Set[int]) -> int:
+    if not seen_colors:
+        return 1
+    return max(seen_colors) + 1
+
+
 def load_problem(filename: str) -> Problem:
     primary_items: Dict[str, PrimaryItemData] = {}
     secondary_items: Dict[str, SecondaryItemData] = {}
     options: List[Option] = []
+
+    seen_colors: Set[int] = set()
 
     with open(filename) as f:
         lines = f.readlines()
@@ -256,6 +264,7 @@ def load_problem(filename: str) -> Problem:
                 elif m2:
                     item_name, color_s = m2.groups()
                     color = int(color_s)
+                    seen_colors.add(color)
                     got_color = True
                     # print("got color")
                 else:
@@ -278,6 +287,9 @@ def load_problem(filename: str) -> Problem:
                         raise ValueError(
                             f"Got weight {weight} for secondary item {item_name}"
                         )
+                    if color is None:
+                        color = get_unique_color(seen_colors)
+                        seen_colors.add(color)
                     option_secondaries[item_name] = SecondaryOptionData(color=color)
 
             options.append(
