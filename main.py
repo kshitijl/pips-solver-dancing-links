@@ -482,7 +482,19 @@ class Puzzle:
         print(f"Rejected {num_options_rejected} options", file=sys.stderr)
         print("\n".join(answer))
 
+    def translate_less_than_1_regions_into_zero(self):
+        for region in self.regions:
+            match region.kind:
+                case SumRegion(target=1, operator=SumOperator.Less):
+                    print(
+                        "Translating region with <1 into a sum region of 0",
+                        file=sys.stderr,
+                    )
+                    region.kind = SumRegion(target=0, operator=SumOperator.Equal)
+                    region.skip_because_zero_region = True
+
     def generate_mcc(self, weighted_solver: bool) -> None:
+        self.translate_less_than_1_regions_into_zero()
         gi = self.grid_info()
         self.generate_items(gi, weighted_solver)
         self.generate_options(gi, weighted_solver)
