@@ -482,7 +482,7 @@ class Puzzle:
         print(f"Rejected {num_options_rejected} options", file=sys.stderr)
         print("\n".join(answer))
 
-    def translate_less_than_1_regions_into_zero(self):
+    def translate_less_than_1_regions_into_zero(self) -> None:
         for region in self.regions:
             match region.kind:
                 case SumRegion(target=1, operator=SumOperator.Less):

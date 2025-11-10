@@ -1,13 +1,12 @@
-import sys
 import re
 import json
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Set, Any, Tuple
-from enum import Enum
+from typing import List, Dict, Set
 import argparse
 import copy
 
 num_solutions = 0
+num_choices = 0
 debug_print = False
 print_solution_summaries = False
 print_solution_details = False
@@ -18,7 +17,7 @@ class PrimaryItemData:
     bound: int
     slack: int
 
-    def within_limits(self):
+    def within_limits(self) -> bool:
         if self.bound >= 0 and self.bound <= self.slack:
             return True
         return False
@@ -59,7 +58,7 @@ class Problem:
         return True
 
     def solve_(self, current_solution: List[int]) -> None:
-        global num_solutions
+        global num_solutions, num_choices
         # If no primary items remain to be covered, print solution and return.
         if len(self.primary_items) == 0 or self.all_primaries_within_limits():
             if print_solution_summaries:
@@ -123,6 +122,7 @@ class Problem:
             if item_to_cover in option_to_try.primaries:
                 if debug_print:
                     print(f"Trying option {option_to_try_idx}: {option_to_try}")
+                num_choices += 1
                 new_primary_items = copy.deepcopy(self.primary_items)
                 new_secondary_items = copy.deepcopy(self.secondary_items)
                 covered_items = set()
@@ -313,6 +313,7 @@ def main() -> None:
 
     problem.solve()
 
+    print(f"Made {num_choices} choices")
     print(f"Found {num_solutions} total solutions")
 
 
