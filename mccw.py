@@ -9,6 +9,7 @@ import copy
 
 num_solutions = 0
 debug_print = False
+print_solution_summaries = False
 print_solution_details = False
 
 
@@ -61,8 +62,11 @@ class Problem:
         global num_solutions
         # If no primary items remain to be covered, print solution and return.
         if len(self.primary_items) == 0 or self.all_primaries_within_limits():
-            print(f"Found solution! {current_solution}")
+            if print_solution_summaries:
+                print(f"Found solution! {current_solution}")
             num_solutions += 1
+            if num_solutions % 100 == 0:
+                print(f"{num_solutions} solutions")
             if print_solution_details:
                 for option_idx in current_solution:
                     print(self.options[option_idx])
