@@ -5,11 +5,19 @@ from typing import List, Dict, Set
 import argparse
 import copy
 
-num_solutions = 0
-num_choices = 0
-debug_print = False
-print_solution_summaries = False
-print_solution_details = False
+
+@dataclass
+class Stats:
+    num_solutions: int = 0
+    num_choices: int = 0
+    max_branch_factor: int = 0
+
+
+@dataclass
+class Params:
+    debug_print: bool
+    print_solution_summaries: bool
+    print_solution_details: bool
 
 
 @dataclass
@@ -57,18 +65,18 @@ class Problem:
                 return False
         return True
 
-    def solve_(self, current_solution: List[int]) -> None:
-        global num_solutions, num_choices
+    def solve_(self, stats: Stats, params: Params, current_solution: List[int]) -> None:
         # If no primary items remain to be covered, print solution and return.
         if len(self.primary_items) == 0 or self.all_primaries_within_limits():
-            if print_solution_summaries:
+            if params.print_solution_summaries:
                 print(f"Found solution! {current_solution}")
-            num_solutions += 1
-            if num_solutions % 100 == 0:
-                print(f"{num_solutions} solutions")
-            if print_solution_details:
+            stats.num_solutions += 1
+            if stats.num_solutions % 100 == 0:
+                print(f"{stats.num_solutions} solutions")
+            if params.print_solution_details:
                 for option_idx in current_solution:
                     print(self.options[option_idx])
+                print()
             return
 
         if len(self.options) == 0:
@@ -92,7 +100,8 @@ class Problem:
 
         assert item_to_cover is not None
 
-        if debug_print:
+        stats.max_branch_factor = max(stats.max_branch_factor, min_len)
+        if params.debug_print:
             print(
                 f"\n\nChoosing item {item_to_cover} to cover with {min_len} open options"
             )
@@ -106,7 +115,7 @@ class Problem:
         # The total remaining weight cannot possibly cover this item; return early,
         idata = self.primary_items[item_to_cover]
         if remaining_weight < idata.bound - idata.slack:
-            if debug_print:
+            if params.debug_print:
                 print(
                     f"Remaining weight {remaining_weight} is too small to satisfy limits on {idata}"
                 )
@@ -120,9 +129,9 @@ class Problem:
         for option_to_try_idx in self.open_option_idxs:
             option_to_try = self.options[option_to_try_idx]
             if item_to_cover in option_to_try.primaries:
-                if debug_print:
+                if params.debug_print:
                     print(f"Trying option {option_to_try_idx}: {option_to_try}")
-                num_choices += 1
+                stats.num_choices += 1
                 new_primary_items = copy.deepcopy(self.primary_items)
                 new_secondary_items = copy.deepcopy(self.secondary_items)
                 covered_items = set()
@@ -146,7 +155,7 @@ class Problem:
                         colored_items[item] = color
 
                 new_option_idxs: List[int] = []
-                if debug_print:
+                if params.debug_print:
                     print(f"covered items: {covered_items}")
                     print(f"colored items: {colored_items}")
                 for option_idx in self.open_option_idxs:
@@ -182,7 +191,7 @@ class Problem:
                         new_option_idxs.append(option_idx)
 
                 already_branched_on.add(option_to_try_idx)
-                if debug_print:
+                if params.debug_print:
                     print(
                         f"new items: {new_primary_items}, secondary {new_secondary_items}, new option idxs: {new_option_idxs}"
                     )
@@ -192,10 +201,16 @@ class Problem:
                     self.options,
                     new_option_idxs,
                 )
-                new_problem.solve_(current_solution + [option_to_try_idx])
+                new_problem.solve_(
+                    stats, params, current_solution + [option_to_try_idx]
+                )
 
-    def solve(self) -> None:
-        return self.solve_([])
+    def solve(
+        self,
+        stats: Stats,
+        params: Params,
+    ) -> None:
+        return self.solve_(stats, params, [])
 
 
 def get_unique_color(seen_colors: Set[int]) -> int:
@@ -304,17 +319,32 @@ def load_problem(filename: str) -> Problem:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_file", type=str)
+    parser.add_argument("--debug-print", default=False, action="store_true")
+    parser.add_argument(
+        "--print-solution-summaries", default=False, action="store_true"
+    )
+    parser.add_argument("--print-solution-details", default=False, action="store_true")
     args = parser.parse_args()
+
+    params = Params(
+        debug_print=args.debug_print,
+        print_solution_summaries=args.print_solution_summaries,
+        print_solution_details=args.print_solution_details,
+    )
+
+    stats = Stats()
 
     problem = load_problem(args.input_file)
 
-    if debug_print:
+    if params.debug_print:
         print(json.dumps(asdict(problem), indent=2))
 
-    problem.solve()
+    problem.solve(stats, params)
 
-    print(f"Made {num_choices} choices")
-    print(f"Found {num_solutions} total solutions")
+    print(
+        f"Made {stats.num_choices} choices, having to choose between at most {stats.max_branch_factor} possible options"
+    )
+    print(f"Found {stats.num_solutions} total solutions")
 
 
 if __name__ == "__main__":
