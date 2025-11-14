@@ -8,6 +8,12 @@ import argparse
 
 
 @dataclass
+class Params:
+    weighted_solver: bool
+    region_counts: bool
+
+
+@dataclass
 class Domino:
     idx: int
     end1: int
@@ -166,7 +172,7 @@ class Puzzle:
     def get_sum_greater_upper_bound(self, gi: GridInfo, region_size: int) -> int:
         return sum(gi.all_domino_end_pips_sorted_desc[:region_size])
 
-    def generate_items(self, gi: GridInfo, weighted_solver: bool) -> None:
+    def generate_items(self, gi: GridInfo, params: Params) -> None:
         primaries, secondaries = [], []
         for gridloc in gi.all_positions:
             primaries.append(f"p_{gridloc.x}_{gridloc.y}")
@@ -177,6 +183,9 @@ class Puzzle:
         for region in self.regions:
             if region.skip_because_zero_region:
                 continue
+            region_size = len(region.indices)
+            if params.region_counts:
+                primaries.append(f"R_{region.idx}_count[{region_size}:{region_size}]")
             match region.kind:
                 case EqualsRegion():
                     secondaries.append(f"R_{region.idx}")
@@ -203,7 +212,7 @@ class Puzzle:
 
                     primaries.append(f"R_{region.idx}[{lower}:{upper}]")
 
-                    if not weighted_solver:
+                    if not params.weighted_solver:
                         for domino in self.dominoes:
                             for end, pips in enumerate([domino.end1, domino.end2]):
                                 secondaries.append(
@@ -380,7 +389,21 @@ class Puzzle:
 
         return False
 
-    def generate_options(self, gi: GridInfo, weighted_solver: bool) -> None:
+    def add_region_counts(
+        self, gi: GridInfo, p1: GridLoc, p2: GridLoc, row: List[str]
+    ) -> None:
+        region1 = gi.grid2region[p1]
+        region2 = gi.grid2region[p2]
+        if region1.idx == region2.idx:
+            if not region1.skip_because_zero_region:
+                row.append(f"R_{region1.idx}_count=2")
+        else:
+            if not region1.skip_because_zero_region:
+                row.append(f"R_{region1.idx}_count=1")
+            if not region2.skip_because_zero_region:
+                row.append(f"R_{region2.idx}_count=1")
+
+    def generate_options(self, gi: GridInfo, params: Params) -> None:
         answer = []
         num_options_rejected = 0
 
@@ -423,11 +446,14 @@ class Puzzle:
                             f"p_{p2.x}_{p2.y}",
                         ]
 
+                        if params.region_counts:
+                            self.add_region_counts(gi, p1, p2, row)
+
                         # This is to make it easier to read off the solution.
                         if flipped:
                             row[1], row[2] = row[2], row[1]
 
-                        if weighted_solver:
+                        if params.weighted_solver:
                             self.sum_region_weights(gi, p1, p2, d1, d2, row)
                         else:
                             self.sum_region_no_weights(gi, p1, domino, end1, row)
@@ -466,7 +492,7 @@ class Puzzle:
 
                         answer.append(" ".join(row))
 
-        if not weighted_solver:
+        if not params.weighted_solver:
             for region in gi.all_sum_regions:
                 for domino in self.dominoes:
                     for end, pips in enumerate([domino.end1, domino.end2]):
@@ -493,11 +519,11 @@ class Puzzle:
                     region.kind = SumRegion(target=0, operator=SumOperator.Equal)
                     region.skip_because_zero_region = True
 
-    def generate_mcc(self, weighted_solver: bool) -> None:
+    def generate_mcc(self, params: Params) -> None:
         self.translate_less_than_1_regions_into_zero()
         gi = self.grid_info()
-        self.generate_items(gi, weighted_solver)
-        self.generate_options(gi, weighted_solver)
+        self.generate_items(gi, params)
+        self.generate_options(gi, params)
 
 
 def main() -> None:
@@ -516,10 +542,22 @@ def main() -> None:
         action="store_true",
         help="The solver supports weights, so don't generate auxiliary counting items and options",
     )
+    parser.add_argument(
+        "--region-counts",
+        default=False,
+        action="store_true",
+        help="Generate constraints for each region saying This region must have exactly this many ends placed in it",
+    )
     args = parser.parse_args()
+
+    if args.region_counts and not args.weighted:
+        raise ValueError("Region counts require weight support")
+
+    params = Params(weighted_solver=args.weighted, region_counts=args.region_counts)
+
     puzzle = Puzzle.load(json.load(open(args.input_file))[args.difficulty])
     # print(json.dumps(asdict(puzzle), indent=2))
-    puzzle.generate_mcc(args.weighted)
+    puzzle.generate_mcc(params)
 
 
 if __name__ == "__main__":
