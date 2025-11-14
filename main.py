@@ -1,3 +1,7 @@
+# TODO iterate the following: prune all optoins according to our rules, then
+# cover do all forced moves until no forced moves remain, then prune options
+# according to our rules, until nothing left to do. only then output an mccw
+# problem.
 from __future__ import annotations
 import json
 import sys
