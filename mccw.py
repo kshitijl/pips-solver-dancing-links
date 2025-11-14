@@ -1,3 +1,4 @@
+import sys
 import re
 import json
 from dataclasses import dataclass, asdict
@@ -18,6 +19,7 @@ class Params:
     debug_print: bool
     print_solution_summaries: bool
     print_solution_details: bool
+    stop_at_first_branch: bool
 
 
 @dataclass
@@ -77,6 +79,7 @@ class Problem:
                 for option_idx in current_solution:
                     print(self.options[option_idx])
                 print()
+
             return
 
         if len(self.options) == 0:
@@ -105,6 +108,11 @@ class Problem:
             print(
                 f"\n\nChoosing item {item_to_cover} to cover with {min_len} open options"
             )
+
+        if params.stop_at_first_branch:
+            if min_len > 1:
+                print("Found first branch point")
+                sys.exit(0)
 
         remaining_weight = 0
         for oidx in self.open_option_idxs:
@@ -324,12 +332,19 @@ def main() -> None:
         "--print-solution-summaries", default=False, action="store_true"
     )
     parser.add_argument("--print-solution-details", default=False, action="store_true")
+    parser.add_argument(
+        "--stop-at-first-branch",
+        default=False,
+        action="store_true",
+        help="Stop the first time there's an actual branch that we need to explore with backtracking, as opposed to a forced move with no choices",
+    )
     args = parser.parse_args()
 
     params = Params(
         debug_print=args.debug_print,
         print_solution_summaries=args.print_solution_summaries,
         print_solution_details=args.print_solution_details,
+        stop_at_first_branch=args.stop_at_first_branch,
     )
 
     stats = Stats()
