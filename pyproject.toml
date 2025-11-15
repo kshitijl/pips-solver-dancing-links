@@ -4,7 +4,16 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.7",
+    "mip>=1.15.0",
+    "ortools>=9.14.6206",
+    "pandas>=2.3.3",
+    "pulp>=3.3.0",
+    "pyscipopt>=5.6.0",
+    "python-sat>=1.8.dev24",
+]
 
 [dependency-groups]
 dev = [
