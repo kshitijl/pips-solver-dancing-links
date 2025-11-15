@@ -184,8 +184,6 @@ class Puzzle:
             if region.skip_because_zero_region:
                 continue
             region_size = len(region.indices)
-            if params.region_counts:
-                primaries.append(f"R_{region.idx}_count[{region_size}:{region_size}]")
             match region.kind:
                 case EqualsRegion():
                     secondaries.append(f"R_{region.idx}")
@@ -198,6 +196,10 @@ class Puzzle:
                     match op:
                         case SumOperator.Equal:
                             lower, upper = m, m
+                            if params.region_counts:
+                                primaries.append(
+                                    f"R_{region.idx}_count[{region_size}:{region_size}]"
+                                )
                         case SumOperator.Greater:
                             lower, upper = (
                                 m + 1,
@@ -396,12 +398,15 @@ class Puzzle:
         region2 = gi.grid2region[p2]
         if region1.idx == region2.idx:
             if not region1.skip_because_zero_region:
-                row.append(f"R_{region1.idx}_count=2")
+                match region1.kind:
+                    case SumRegion(operator=SumOperator.Equal):
+                        row.append(f"R_{region1.idx}_count=2")
         else:
-            if not region1.skip_because_zero_region:
-                row.append(f"R_{region1.idx}_count=1")
-            if not region2.skip_because_zero_region:
-                row.append(f"R_{region2.idx}_count=1")
+            for region in [region1, region2]:
+                if not region.skip_because_zero_region:
+                    match region.kind:
+                        case SumRegion(operator=SumOperator.Equal):
+                            row.append(f"R_{region.idx}_count=1")
 
     def generate_options(self, gi: GridInfo, params: Params) -> None:
         answer = []
