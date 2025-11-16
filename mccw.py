@@ -20,6 +20,7 @@ class Params:
     print_solution_summaries: bool
     print_solution_details: bool
     stop_at_first_branch: bool
+    stop_at_first_solution: bool
 
 
 @dataclass
@@ -68,6 +69,8 @@ class Problem:
         return True
 
     def solve_(self, stats: Stats, params: Params, current_solution: List[int]) -> None:
+        if params.stop_at_first_solution and stats.num_solutions >= 1:
+            return
         # If no primary items remain to be covered, print solution and return.
         if len(self.primary_items) == 0 or self.all_primaries_within_limits():
             if params.print_solution_summaries:
@@ -97,6 +100,8 @@ class Problem:
                     if item in self.options[option_idx].primaries
                 ]
             )
+            if params.stop_at_first_branch:
+                print(f"Item {item} has {options_for_item} options")
             if options_for_item < min_len:
                 min_len = options_for_item
                 item_to_cover = item
@@ -338,6 +343,12 @@ def main() -> None:
         action="store_true",
         help="Stop the first time there's an actual branch that we need to explore with backtracking, as opposed to a forced move with no choices",
     )
+    parser.add_argument(
+        "--stop-at-first-solution",
+        default=False,
+        action="store_true",
+        help="Stop after finding the first solution",
+    )
     args = parser.parse_args()
 
     params = Params(
@@ -345,6 +356,7 @@ def main() -> None:
         print_solution_summaries=args.print_solution_summaries,
         print_solution_details=args.print_solution_details,
         stop_at_first_branch=args.stop_at_first_branch,
+        stop_at_first_solution=args.stop_at_first_solution,
     )
 
     stats = Stats()
