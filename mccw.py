@@ -62,6 +62,77 @@ class Problem:
     options: List[Option]
     open_option_idxs: List[int]
 
+    def arc_consistency(self) -> None:
+        print(len(self.options), len(self.primary_items))
+
+        for option_to_try_idx in self.open_option_idxs:
+            option_to_try = self.options[option_to_try_idx]
+
+            new_primary_items = copy.deepcopy(self.primary_items)
+            new_secondary_items = copy.deepcopy(self.secondary_items)
+
+            covered_items = set()
+            colored_items: Dict[str, int] = {}
+            for item, poption_data in option_to_try.primaries.items():
+                pitem_data = new_primary_items[item]
+                weight = poption_data.weight
+                pitem_data.bound -= weight
+                if pitem_data.bound == 0:
+                    del new_primary_items[item]
+                    covered_items.add(item)
+                if pitem_data.bound < 0:
+                    assert False
+
+            for item, soption_data in option_to_try.secondaries.items():
+                sitem_data = new_secondary_items[item]
+                color = soption_data.color
+                if color is not None:
+                    sitem_data.color = color
+                    colored_items[item] = color
+
+            new_option_idxs: List[int] = []
+
+            for option_idx in self.open_option_idxs:
+                if option_idx == option_to_try_idx:
+                    continue
+                compatible = True
+                if (
+                    not self.options[option_idx]
+                    .primaries.keys()
+                    .isdisjoint(covered_items)
+                ):
+                    compatible = False
+                    continue
+                for item_name, poption_data in self.options[
+                    option_idx
+                ].primaries.items():
+                    if poption_data.weight > new_primary_items[item_name].bound:
+                        compatible = False
+                        break
+                for item_name, soption_data in self.options[
+                    option_idx
+                ].secondaries.items():
+                    if item_name in colored_items:
+                        if soption_data.color != colored_items[item_name]:
+                            compatible = False
+                            break
+                if compatible:
+                    new_option_idxs.append(option_idx)
+
+            supported_primaries = set()
+            for option_idx in new_option_idxs + [option_to_try_idx]:
+                option = self.options[option_idx]
+                for primary_name in option.primaries.keys():
+                    supported_primaries.add(primary_name)
+
+            if len(supported_primaries) < len(self.primary_items):
+                unsupported_primaries = (
+                    set(self.primary_items.keys()) - supported_primaries
+                )
+                print(
+                    f"Option {option_to_try_idx} on line {option_to_try_idx + 2} leaves some primaries unsupported: {unsupported_primaries}"
+                )
+
     def all_primaries_within_limits(self) -> bool:
         for item in self.primary_items.values():
             if not item.within_limits():
@@ -366,7 +437,9 @@ def main() -> None:
     if params.debug_print:
         print(json.dumps(asdict(problem), indent=2))
 
-    problem.solve(stats, params)
+    problem.arc_consistency()
+
+    # problem.solve(stats, params)
 
     print(
         f"Made {stats.num_choices} choices, having to choose between at most {stats.max_branch_factor} possible options"
