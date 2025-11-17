@@ -9,18 +9,18 @@ from collections import defaultdict
 
 
 class UnionFind:
-    def __init__(self, size):
-        self.parent = [i for i in range(size)]
-        self.rank = [0] * size
+    def __init__(self, size: int) -> None:
+        self.parent: List[int] = [i for i in range(size)]
+        self.rank: List[int] = [0] * size
 
-    def find(self, i):
+    def find(self, i: int) -> int:
         if self.parent[i] != i:
             self.parent[i] = self.find(self.parent[i])  # Path compression
         return self.parent[i]
 
-    def union(self, a, b):
-        rootA = self.find(a)
-        rootB = self.find(b)
+    def union(self, a: int, b: int) -> None:
+        rootA: int = self.find(a)
+        rootB: int = self.find(b)
 
         if rootA != rootB:
             # Union by rank
@@ -32,18 +32,18 @@ class UnionFind:
                 self.parent[rootB] = rootA
                 self.rank[rootA] += 1
 
-    def connected(self, a, b):
+    def connected(self, a: int, b: int) -> bool:
         return self.find(a) == self.find(b)
 
-    def count_sets(self):
+    def count_sets(self) -> int:
         return sum(1 for i in range(len(self.parent)) if i == self.parent[i])
 
-    def get_set_elements(self, i):
+    def get_set_elements(self, i: int) -> List[int]:
         root = self.find(i)
         return [x for x in range(len(self.parent)) if self.find(x) == root]
 
     def get_set_cardinalities(self) -> Dict[int, int]:
-        answer = defaultdict(int)
+        answer: Dict[int, int] = defaultdict(int)
         for i in range(len(self.parent)):
             answer[self.find(i)] += 1
         return answer

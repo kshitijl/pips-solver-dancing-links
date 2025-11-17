@@ -435,7 +435,7 @@ class Problem:
         self,
         stats: Stats,
         params: Params,
-    ) -> None:
+    ) -> SolveResult:
         return self.solve_(stats, params, [])
 
 
