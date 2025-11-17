@@ -81,11 +81,13 @@ class Problem:
         )
 
         params = Params(stop_at_first_branch=True, stop_at_first_solution=True)
-        stats = Stats()
         answer = []
 
         for option_to_try_idx in self.open_option_idxs:
             option_to_try = self.options[option_to_try_idx]
+            print(
+                f"\nTrying option {option_to_try_idx}, {option_to_try}", file=sys.stderr
+            )
 
             new_primary_items = copy.deepcopy(self.primary_items)
             new_secondary_items = copy.deepcopy(self.secondary_items)
@@ -108,6 +110,11 @@ class Problem:
                 if color is not None:
                     sitem_data.color = color
                     colored_items[item] = color
+
+            print(
+                f"Covered items: {covered_items}, colored items: {colored_items}",
+                file=sys.stderr,
+            )
 
             new_option_idxs: List[int] = []
 
@@ -138,6 +145,11 @@ class Problem:
                 if compatible:
                     new_option_idxs.append(option_idx)
 
+            print(
+                f"New primary items: {new_primary_items}, new option idxs: {new_option_idxs}",
+                file=sys.stderr,
+            )
+
             new_problem = Problem(
                 new_primary_items,
                 new_secondary_items,
@@ -145,10 +157,11 @@ class Problem:
                 new_option_idxs,
             )
             recursive_result = new_problem.solve_(
-                stats,
+                Stats(),
                 params,
                 [],
             )
+            print(f"Result: {recursive_result}", file=sys.stderr)
 
             if recursive_result == SolveResult.Unsat:
                 answer.append(option_to_try_idx)
@@ -392,8 +405,11 @@ class Problem:
                     stats, params, current_solution + [option_to_try_idx]
                 )
 
-                if recursive_result == SolveResult.Sat:
-                    answer = SolveResult.Sat
+                if answer == SolveResult.Unsat:
+                    if recursive_result == SolveResult.Sat:
+                        answer = SolveResult.Sat
+                    elif recursive_result == SolveResult.Unknown:
+                        answer = SolveResult.Unknown
 
         return answer
 
@@ -547,7 +563,7 @@ def main() -> None:
         print(json.dumps(asdict(problem), indent=2))
 
     if args.arc_consistency:
-        result = problem.arc_consistency()
+        result = problem.arc_consistency2()
         lines = open(args.input_file).readlines()
         bad_lines = set([option_idx + 1 for option_idx in result.bad_option_idxs])
         for line_number in range(len(lines)):
