@@ -234,10 +234,16 @@ class Problem:
                 unsupported_primaries = (
                     set(self.primary_items.keys()) - supported_primaries
                 )
+                if (
+                    len(unsupported_primaries) == 1
+                    and list(unsupported_primaries)[0] == "R_1"
+                ):
+                    continue
                 answer.append(option_to_try_idx)
                 # TODO: doesn't handle sum < constraints properly
                 print(
-                    f"Option {option_to_try_idx} on line {option_to_try_idx + 2} leaves some primaries unsupported: {unsupported_primaries}"
+                    f"Option {option_to_try_idx} on line {option_to_try_idx + 2} leaves some primaries unsupported: {unsupported_primaries}",
+                    file=sys.stderr,
                 )
         return ArcConsistency2Result(bad_option_idxs=answer)
 
