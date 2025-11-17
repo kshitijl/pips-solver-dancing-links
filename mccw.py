@@ -1,10 +1,11 @@
-import sys
 import re
 import json
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Set
 import argparse
 import copy
+import sys
+from enum import Enum
 
 
 @dataclass
@@ -16,11 +17,11 @@ class Stats:
 
 @dataclass
 class Params:
-    debug_print: bool
-    print_solution_summaries: bool
-    print_solution_details: bool
-    stop_at_first_branch: bool
-    stop_at_first_solution: bool
+    debug_print: bool = False
+    print_solution_summaries: bool = False
+    print_solution_details: bool = False
+    stop_at_first_branch: bool = False
+    stop_at_first_solution: bool = False
 
 
 @dataclass
@@ -55,6 +56,17 @@ class Option:
     secondaries: Dict[str, SecondaryOptionData]
 
 
+class SolveResult(Enum):
+    Sat = 0
+    Unsat = 1
+    Unknown = 2
+
+
+@dataclass
+class ArcConsistency2Result:
+    bad_option_idxs: List[int]
+
+
 @dataclass
 class Problem:
     primary_items: Dict[str, PrimaryItemData]
@@ -62,9 +74,89 @@ class Problem:
     options: List[Option]
     open_option_idxs: List[int]
 
-    def arc_consistency(self) -> None:
-        print(len(self.options), len(self.primary_items))
+    def arc_consistency2(self) -> ArcConsistency2Result:
+        print(
+            f"Doing arc consistency on {len(self.primary_items)} items and {len(self.options)} options",
+            file=sys.stderr,
+        )
 
+        params = Params(stop_at_first_branch=True, stop_at_first_solution=True)
+        stats = Stats()
+        answer = []
+
+        for option_to_try_idx in self.open_option_idxs:
+            option_to_try = self.options[option_to_try_idx]
+
+            new_primary_items = copy.deepcopy(self.primary_items)
+            new_secondary_items = copy.deepcopy(self.secondary_items)
+
+            covered_items = set()
+            colored_items: Dict[str, int] = {}
+            for item, poption_data in option_to_try.primaries.items():
+                pitem_data = new_primary_items[item]
+                weight = poption_data.weight
+                pitem_data.bound -= weight
+                if pitem_data.bound == 0:
+                    del new_primary_items[item]
+                    covered_items.add(item)
+                if pitem_data.bound < 0:
+                    assert False
+
+            for item, soption_data in option_to_try.secondaries.items():
+                sitem_data = new_secondary_items[item]
+                color = soption_data.color
+                if color is not None:
+                    sitem_data.color = color
+                    colored_items[item] = color
+
+            new_option_idxs: List[int] = []
+
+            for option_idx in self.open_option_idxs:
+                if option_idx == option_to_try_idx:
+                    continue
+                compatible = True
+                if (
+                    not self.options[option_idx]
+                    .primaries.keys()
+                    .isdisjoint(covered_items)
+                ):
+                    compatible = False
+                    continue
+                for item_name, poption_data in self.options[
+                    option_idx
+                ].primaries.items():
+                    if poption_data.weight > new_primary_items[item_name].bound:
+                        compatible = False
+                        break
+                for item_name, soption_data in self.options[
+                    option_idx
+                ].secondaries.items():
+                    if item_name in colored_items:
+                        if soption_data.color != colored_items[item_name]:
+                            compatible = False
+                            break
+                if compatible:
+                    new_option_idxs.append(option_idx)
+
+            new_problem = Problem(
+                new_primary_items,
+                new_secondary_items,
+                self.options,
+                new_option_idxs,
+            )
+            recursive_result = new_problem.solve_(
+                stats,
+                params,
+                [],
+            )
+
+            if recursive_result == SolveResult.Unsat:
+                answer.append(option_to_try_idx)
+
+        return ArcConsistency2Result(bad_option_idxs=answer)
+
+    def arc_consistency(self) -> ArcConsistency2Result:
+        answer = []
         for option_to_try_idx in self.open_option_idxs:
             option_to_try = self.options[option_to_try_idx]
 
@@ -129,9 +221,12 @@ class Problem:
                 unsupported_primaries = (
                     set(self.primary_items.keys()) - supported_primaries
                 )
+                answer.append(option_to_try_idx)
+                # TODO: doesn't handle sum < constraints properly
                 print(
                     f"Option {option_to_try_idx} on line {option_to_try_idx + 2} leaves some primaries unsupported: {unsupported_primaries}"
                 )
+        return ArcConsistency2Result(bad_option_idxs=answer)
 
     def all_primaries_within_limits(self) -> bool:
         for item in self.primary_items.values():
@@ -139,9 +234,11 @@ class Problem:
                 return False
         return True
 
-    def solve_(self, stats: Stats, params: Params, current_solution: List[int]) -> None:
+    def solve_(
+        self, stats: Stats, params: Params, current_solution: List[int]
+    ) -> SolveResult:
         if params.stop_at_first_solution and stats.num_solutions >= 1:
-            return
+            return SolveResult.Sat
         # If no primary items remain to be covered, print solution and return.
         if len(self.primary_items) == 0 or self.all_primaries_within_limits():
             if params.print_solution_summaries:
@@ -154,10 +251,10 @@ class Problem:
                     print(self.options[option_idx])
                 print()
 
-            return
+            return SolveResult.Sat
 
         if len(self.options) == 0:
-            return
+            return SolveResult.Unsat
 
         # Choose a primary item to cover, using MRV heuristic
         item_to_cover, min_len = None, 1000000
@@ -171,7 +268,7 @@ class Problem:
                     if item in self.options[option_idx].primaries
                 ]
             )
-            if params.stop_at_first_branch:
+            if params.stop_at_first_branch and params.debug_print:
                 print(f"Item {item} has {options_for_item} options")
             if options_for_item < min_len:
                 min_len = options_for_item
@@ -179,16 +276,14 @@ class Problem:
 
         assert item_to_cover is not None
 
+        if min_len == 0:
+            return SolveResult.Unsat
+
         stats.max_branch_factor = max(stats.max_branch_factor, min_len)
         if params.debug_print:
             print(
                 f"\n\nChoosing item {item_to_cover} to cover with {min_len} open options"
             )
-
-        if params.stop_at_first_branch:
-            if min_len > 1:
-                print("Found first branch point")
-                sys.exit(0)
 
         remaining_weight = 0
         for oidx in self.open_option_idxs:
@@ -203,11 +298,19 @@ class Problem:
                 print(
                     f"Remaining weight {remaining_weight} is too small to satisfy limits on {idata}"
                 )
-            return
+            return SolveResult.Unsat
+
+        if params.stop_at_first_branch:
+            if min_len > 1:
+                if params.debug_print:
+                    print("Found first branch point")
+                return SolveResult.Unknown
 
         # Iterate over all options with that item that don't push its bound below 0
         # Also! We cannot include any option indices that we've already branched over.
         # I think this is (part of) what Knuth is doing with tweaking.
+
+        answer = SolveResult.Unsat
 
         already_branched_on: Set[int] = set()
         for option_to_try_idx in self.open_option_idxs:
@@ -285,9 +388,14 @@ class Problem:
                     self.options,
                     new_option_idxs,
                 )
-                new_problem.solve_(
+                recursive_result = new_problem.solve_(
                     stats, params, current_solution + [option_to_try_idx]
                 )
+
+                if recursive_result == SolveResult.Sat:
+                    answer = SolveResult.Sat
+
+        return answer
 
     def solve(
         self,
@@ -420,6 +528,7 @@ def main() -> None:
         action="store_true",
         help="Stop after finding the first solution",
     )
+    parser.add_argument("--arc-consistency", default=False, action="store_true")
     args = parser.parse_args()
 
     params = Params(
@@ -437,14 +546,19 @@ def main() -> None:
     if params.debug_print:
         print(json.dumps(asdict(problem), indent=2))
 
-    problem.arc_consistency()
-
-    # problem.solve(stats, params)
-
-    print(
-        f"Made {stats.num_choices} choices, having to choose between at most {stats.max_branch_factor} possible options"
-    )
-    print(f"Found {stats.num_solutions} total solutions")
+    if args.arc_consistency:
+        result = problem.arc_consistency()
+        lines = open(args.input_file).readlines()
+        bad_lines = set([option_idx + 1 for option_idx in result.bad_option_idxs])
+        for line_number in range(len(lines)):
+            if line_number not in bad_lines:
+                print(lines[line_number], end="")
+    else:
+        problem.solve(stats, params)
+        print(
+            f"Made {stats.num_choices} choices, having to choose between at most {stats.max_branch_factor} possible options"
+        )
+        print(f"Found {stats.num_solutions} total solutions")
 
 
 if __name__ == "__main__":
