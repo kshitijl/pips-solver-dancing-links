@@ -5,6 +5,48 @@ from dataclasses import dataclass
 from typing import List, Dict, Set, Any, Tuple
 from enum import Enum
 import argparse
+from collections import defaultdict
+
+
+class UnionFind:
+    def __init__(self, size):
+        self.parent = [i for i in range(size)]
+        self.rank = [0] * size
+
+    def find(self, i):
+        if self.parent[i] != i:
+            self.parent[i] = self.find(self.parent[i])  # Path compression
+        return self.parent[i]
+
+    def union(self, a, b):
+        rootA = self.find(a)
+        rootB = self.find(b)
+
+        if rootA != rootB:
+            # Union by rank
+            if self.rank[rootA] < self.rank[rootB]:
+                self.parent[rootA] = rootB
+            elif self.rank[rootA] > self.rank[rootB]:
+                self.parent[rootB] = rootA
+            else:
+                self.parent[rootB] = rootA
+                self.rank[rootA] += 1
+
+    def connected(self, a, b):
+        return self.find(a) == self.find(b)
+
+    def count_sets(self):
+        return sum(1 for i in range(len(self.parent)) if i == self.parent[i])
+
+    def get_set_elements(self, i):
+        root = self.find(i)
+        return [x for x in range(len(self.parent)) if self.find(x) == root]
+
+    def get_set_cardinalities(self) -> Dict[int, int]:
+        answer = defaultdict(int)
+        for i in range(len(self.parent)):
+            answer[self.find(i)] += 1
+        return answer
 
 
 @dataclass
@@ -84,11 +126,39 @@ class GridInfo:
     grid2region: Dict[GridLoc, Region]
     all_sum_regions: List[Region]
     all_domino_end_pips_sorted_desc: List[int]
+    grid2idx: Dict[GridLoc, int]
+    graph_edges: List[Tuple[int, int]]
+    odd_region_result_memo: Dict[Tuple[GridLoc, GridLoc], bool]
 
 
 class Orientation(Enum):
     Horizontal = 0
     Vertical = 1
+
+
+def would_result_in_odd_region(gi: GridInfo, p1: GridLoc, p2: GridLoc) -> bool:
+    if (p1, p2) in gi.odd_region_result_memo:
+        return gi.odd_region_result_memo[(p1, p2)]
+    uf = UnionFind(len(gi.all_positions))
+    p1_idx = gi.grid2idx[p1]
+    p2_idx = gi.grid2idx[p2]
+
+    uf.union(p1_idx, p2_idx)
+
+    for n1, n2 in gi.graph_edges:
+        if n1 != p1_idx and n1 != p2_idx and n2 != p1_idx and n2 != p2_idx:
+            uf.union(n1, n2)
+
+    cardinalities = uf.get_set_cardinalities()
+    for cardinality in cardinalities.values():
+        if cardinality % 2 == 1:
+            gi.odd_region_result_memo[(p1, p2)] = True
+            gi.odd_region_result_memo[(p2, p1)] = True
+            return True
+
+    gi.odd_region_result_memo[(p1, p2)] = False
+    gi.odd_region_result_memo[(p2, p1)] = False
+    return False
 
 
 @dataclass
@@ -147,7 +217,11 @@ class Puzzle:
                 all_positions.append(gridloc)
                 grid2region[gridloc] = region
 
+        grid2idx: Dict[GridLoc, int] = {}
         all_positions = list(sorted(all_positions))
+
+        for idx, pos in enumerate(all_positions):
+            grid2idx[pos] = idx
 
         max_x = max([pos.x for pos in all_positions])
         max_y = max([pos.y for pos in all_positions])
@@ -159,14 +233,25 @@ class Puzzle:
 
         all_domino_end_pips = list(reversed(sorted(all_domino_end_pips)))
 
+        set_all_positions = set(all_positions)
+        graph_edges = []
+        for pos in all_positions:
+            for dx, dy in [(0, 1), (1, 0)]:
+                neighbor = GridLoc(x=pos.x + dx, y=pos.y + dy)
+                if neighbor in set_all_positions:
+                    graph_edges.append((grid2idx[pos], grid2idx[neighbor]))
+
         return GridInfo(
             all_positions,
-            set(all_positions),
+            set_all_positions,
             max_x,
             max_y,
             grid2region,
             all_sum_regions,
             all_domino_end_pips,
+            grid2idx,
+            graph_edges,
+            odd_region_result_memo={},
         )
 
     def get_sum_greater_upper_bound(self, gi: GridInfo, region_size: int) -> int:
@@ -410,6 +495,7 @@ class Puzzle:
 
     def generate_options(self, gi: GridInfo, params: Params) -> None:
         answer = []
+        num_odd_region_placements_rejected = 0
         num_options_rejected = 0
 
         all_start_pos = [
@@ -428,6 +514,10 @@ class Puzzle:
                         if result is None:
                             continue
                         p1, p2, d1, d2, end1, end2 = result
+
+                        if would_result_in_odd_region(gi, p1, p2):
+                            num_odd_region_placements_rejected += 1
+                            continue
 
                         # Here we apply a bunch of rules that try to figure out
                         # if this placement is immediately impossible.
@@ -510,7 +600,10 @@ class Puzzle:
                                 f"E_{domino.idx}_{end}R_{region.idx}:1 #E_{domino.idx}_{end}R_{region.idx}_W_{p} R_{region.idx}"
                             )
 
-        print(f"Rejected {num_options_rejected} options", file=sys.stderr)
+        print(
+            f"Rejected {num_options_rejected} options, {num_odd_region_placements_rejected} placements that would result in odd regions",
+            file=sys.stderr,
+        )
         print("\n".join(answer))
 
     def translate_less_than_1_regions_into_zero(self) -> None:
