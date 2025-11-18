@@ -125,10 +125,12 @@ class GridInfo:
     max_y: int
     grid2region: Dict[GridLoc, Region]
     all_sum_regions: List[Region]
+    all_sum_equal_region_idxs: Set[int]
     all_domino_end_pips_sorted_desc: List[int]
     grid2idx: Dict[GridLoc, int]
     graph_edges: List[Tuple[int, int]]
     odd_region_result_memo: Dict[Tuple[GridLoc, GridLoc], bool]
+    residual_region: Region
 
 
 class Orientation(Enum):
@@ -206,12 +208,22 @@ class Puzzle:
         all_positions = []
         grid2region = {}
         all_sum_regions = []
+        all_sum_equal_region_idxs = set()
+        total_sum_equal_regions_sum = 0
+        residual_indices = set()
 
         for region in self.regions:
+            is_residual = True
             match region.kind:
                 case SumRegion():
                     if not region.skip_because_zero_region:
                         all_sum_regions.append(region)
+                        if region.kind.operator == SumOperator.Equal:
+                            all_sum_equal_region_idxs.add(region.idx)
+                            total_sum_equal_regions_sum += region.kind.target
+                            is_residual = False
+            if is_residual:
+                residual_indices.update(region.indices)
 
             for gridloc in region.indices:
                 all_positions.append(gridloc)
@@ -232,6 +244,7 @@ class Puzzle:
             all_domino_end_pips.append(domino.end2)
 
         all_domino_end_pips = list(reversed(sorted(all_domino_end_pips)))
+        total_pips_sum = sum(all_domino_end_pips)
 
         set_all_positions = set(all_positions)
         graph_edges = []
@@ -241,6 +254,16 @@ class Puzzle:
                 if neighbor in set_all_positions:
                     graph_edges.append((grid2idx[pos], grid2idx[neighbor]))
 
+        residual_region = Region(
+            idx=max([r.idx for r in self.regions]) + 1000,
+            kind=SumRegion(
+                operator=SumOperator.Equal,
+                target=total_pips_sum - total_sum_equal_regions_sum,
+            ),
+            indices=list(residual_indices),
+            skip_because_zero_region=total_pips_sum == total_sum_equal_regions_sum,
+        )
+
         return GridInfo(
             all_positions,
             set_all_positions,
@@ -248,10 +271,12 @@ class Puzzle:
             max_y,
             grid2region,
             all_sum_regions,
+            all_sum_equal_region_idxs,
             all_domino_end_pips,
             grid2idx,
             graph_edges,
             odd_region_result_memo={},
+            residual_region=residual_region,
         )
 
     def get_sum_greater_upper_bound(self, gi: GridInfo, region_size: int) -> int:
@@ -265,7 +290,11 @@ class Puzzle:
         for idx, _domino in enumerate(self.dominoes):
             primaries.append(f"d_{idx}")
 
-        for region in self.regions:
+        regions = self.regions
+        if params.weighted_solver:
+            regions = regions + [gi.residual_region]
+
+        for region in regions:
             if region.skip_because_zero_region:
                 continue
             region_size = len(region.indices)
@@ -374,23 +403,36 @@ class Puzzle:
         d2: int,
         row: List[str],
     ) -> None:
+        def gen(r1, r2):
+            pips_in_region = []
+
+            if r1.idx == r2.idx:
+                pips_in_region = [(r1, d1 + d2)]
+            else:
+                pips_in_region = [(r1, d1), (r2, d2)]
+
+            for region, pips in pips_in_region:
+                if pips == 0:
+                    continue
+                match region.kind:
+                    case SumRegion():
+                        if not region.skip_because_zero_region:
+                            row.append(f"R_{region.idx}={pips}")
+
         r1 = gi.grid2region[p1]
         r2 = gi.grid2region[p2]
+        gen(r1, r2)
 
-        pips_in_region = []
+        dummy = Region(
+            idx=-1, kind=EmptyRegion(), indices=[], skip_because_zero_region=True
+        )
+        res1, res2 = dummy, dummy
+        if p1 in gi.residual_region.indices:
+            res1 = gi.residual_region
+        if p2 in gi.residual_region.indices:
+            res2 = gi.residual_region
 
-        if r1.idx == r2.idx:
-            pips_in_region = [(r1, d1 + d2)]
-        else:
-            pips_in_region = [(r1, d1), (r2, d2)]
-
-        for region, pips in pips_in_region:
-            if pips == 0:
-                continue
-            match region.kind:
-                case SumRegion():
-                    if not region.skip_because_zero_region:
-                        row.append(f"R_{region.idx}={pips}")
+        gen(res1, res2)
 
     def unequal_region(
         self,
