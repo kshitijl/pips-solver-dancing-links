@@ -452,15 +452,32 @@ class Puzzle:
     def get_affected_regions(
         self, gi: GridInfo, p1: GridLoc, p2: GridLoc, d1: int, d2: int
     ) -> List[UpdatedRegion]:
+        def gen(region1, region2, answer):
+            if region1.idx == region2.idx:
+                answer += [self.updated_region_if_placed(gi, region1, [d1, d2], 2)]
+            else:
+                answer += [
+                    self.updated_region_if_placed(gi, region1, [d1], 1),
+                    self.updated_region_if_placed(gi, region2, [d2], 1),
+                ]
+
+        answer = []
         region1 = gi.grid2region[p1]
         region2 = gi.grid2region[p2]
-        if region1.idx == region2.idx:
-            return [self.updated_region_if_placed(gi, region1, [d1, d2], 2)]
-        else:
-            return [
-                self.updated_region_if_placed(gi, region1, [d1], 1),
-                self.updated_region_if_placed(gi, region2, [d2], 1),
-            ]
+        gen(region1, region2, answer)
+
+        dummy = Region(
+            idx=-1, kind=EmptyRegion(), indices=[], skip_because_zero_region=True
+        )
+        res1, res2 = dummy, dummy
+        if p1 in gi.residual_region.indices:
+            res1 = gi.residual_region
+        if p2 in gi.residual_region.indices:
+            res2 = gi.residual_region
+
+        gen(res1, res2, answer)
+
+        return answer
 
     def updated_region_if_placed(
         self,
