@@ -1,11 +1,14 @@
+import time
 import re
 import json
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Tuple
 import argparse
 import copy
+from collections import defaultdict
 import sys
 from enum import Enum
+from ortools.sat.python import cp_model, cp_model_helper
 
 
 @dataclass
@@ -37,7 +40,7 @@ class PrimaryItemData:
 
 @dataclass
 class SecondaryItemData:
-    color: int | None
+    color: int
 
 
 @dataclass
@@ -439,6 +442,84 @@ class Problem:
         return self.solve_(stats, params, [])
 
 
+def solve_cp_sat(problem: Problem) -> None:
+    start = time.time()
+    model = cp_model.CpModel()
+
+    # Reduction from MCCW to CP-SAT :
+    # a boolean variable x_i for each option
+    # for primary items with no multiplicities: collect together x's for options that have that item, then generate a constraint saying sum of them == 1
+    # for primary items with multiplicity K and no slack: same as above, but sum == K
+    # for primary items with multiplicity and interval [L:U]: two constraints, sum >= L, sum <= U
+    # for secondary items not assigned a color: sum <= 1
+    # for secondary items assigned a color: make a boolean variable for each possible color of each colored secondary item, then: sum of them <= 1. and for any option that assigns that color to that secondary, x_option <= x_color_sec
+
+    x_option = [model.new_bool_var(f"x_{i}") for i in range(len(problem.options))]
+
+    # at loading time we generate a unique color for every option that has a
+    # secondary without a color. this is equivalent to the uncolored constraint,
+    # where each secondary can be used at most once.
+    x_secondary_color: Dict[Tuple[str, int], cp_model.IntVar] = {}
+    x_secondary: Dict[str, List[cp_model.IntVar]] = defaultdict(list)
+
+    primary_constraint: Dict[str, cp_model_helper.SumArray] = {}
+    for option_idx, option in enumerate(problem.options):
+        for pname, pdata in option.primaries.items():
+            term = pdata.weight * x_option[option_idx]
+            if pname not in primary_constraint:
+                primary_constraint[pname] = term
+            else:
+                primary_constraint[pname] += term
+
+        for sname, sdata in option.secondaries.items():
+            t = (sname, sdata.color)
+            if t not in x_secondary_color:
+                var = model.new_bool_var(f"s_{sname}_{sdata.color}")
+                x_secondary_color[t] = var
+                x_secondary[sname].append(var)
+
+            model.add(x_option[option_idx] <= x_secondary_color[t])
+
+    for item_name, item_data in problem.primary_items.items():
+        expr = primary_constraint[item_name]
+        if item_data.slack == 0:
+            model.add(expr == item_data.bound)
+        else:
+            model.add(expr <= item_data.bound)
+            model.add(expr >= item_data.bound - item_data.slack)
+
+    for sitem_name, vars in x_secondary.items():
+        model.add(sum(vars) <= 1)
+
+    print(f"Finished building CP-SAT model: {model.model_stats()}", file=sys.stderr)
+
+    class SolutionCounter(cp_model.CpSolverSolutionCallback):
+        def __init__(self):
+            cp_model.CpSolverSolutionCallback.__init__(self)
+            self.num_solutions = 0
+
+        def on_solution_callback(self) -> None:
+            self.num_solutions += 1
+            if self.num_solutions % 10 == 0:
+                print(f"Found {self.num_solutions} solutions")
+
+    solver = cp_model.CpSolver()
+    solver.parameters.enumerate_all_solutions = True
+    counter = SolutionCounter()
+
+    print("Beginning to solve", file=sys.stderr)
+    status = solver.solve(model, counter)
+
+    if status == cp_model.OPTIMAL:
+        print(f"Found {counter.num_solutions} solutions", file=sys.stderr)
+    else:
+        print("No solution found", file=sys.stderr)
+
+    end = time.time()
+    print(f"CP-SAT finished in {end - start:.2} seconds")
+    # ..
+
+
 def get_unique_color(seen_colors: Set[int]) -> int:
     if not seen_colors:
         return 1
@@ -563,6 +644,7 @@ def main() -> None:
         help="Stop after finding the first solution",
     )
     parser.add_argument("--arc-consistency", default=False, action="store_true")
+    parser.add_argument("--cp-sat", default=False, action="store_true")
     args = parser.parse_args()
 
     params = Params(
@@ -587,6 +669,8 @@ def main() -> None:
         for line_number in range(len(lines)):
             if line_number not in bad_lines:
                 print(lines[line_number], end="")
+    elif args.cp_sat:
+        solve_cp_sat(problem)
     else:
         problem.solve(stats, params)
         print(
