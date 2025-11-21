@@ -9,6 +9,7 @@ from collections import defaultdict
 import sys
 from enum import Enum
 from ortools.sat.python import cp_model, cp_model_helper
+import z3
 
 
 @dataclass
@@ -446,16 +447,15 @@ class Problem:
 
 
 def solve_cp_sat(problem: Problem) -> None:
-    start = time.time()
     model = cp_model.CpModel()
 
     # Reduction from MCCW to CP-SAT :
     # a boolean variable x_i for each option
-    # for primary items with no multiplicities: collect together x's for options that have that item, then generate a constraint saying sum of them == 1
-    # for primary items with multiplicity K and no slack: same as above, but sum == K
+    # an integer variable s_i for each secondary item. assigned to its color
+    # for primary items with multiplicity K and no slack: collect together x's for options that have that item, then generate a constraint saying sum of them == K
     # for primary items with multiplicity and interval [L:U]: two constraints, sum >= L, sum <= U
-    # for secondary items not assigned a color: sum <= 1
-    # for secondary items assigned a color: make a boolean variable for each possible color of each colored secondary item, then: sum of them <= 1. and for any option that assigns that color to that secondary, x_option <= x_color_sec
+    # for secondary items assigned a color: for each option that assigns that secondary, s_i == that color, enforced if that option is chosen
+    # also, s_i == -1 (no color chosen), enforced if no option is chosen among options that touch that secondary
 
     max_color_for: Dict[str, int] = {}
     for option in problem.options:
@@ -521,6 +521,7 @@ def solve_cp_sat(problem: Problem) -> None:
     counter = SolutionCounter()
 
     print("Beginning to solve", file=sys.stderr)
+    start = time.time()
     status = solver.solve(model, counter)
 
     if status == cp_model.OPTIMAL:
@@ -530,7 +531,10 @@ def solve_cp_sat(problem: Problem) -> None:
 
     end = time.time()
     print(f"CP-SAT finished in {end - start:.2f} seconds")
-    # ..
+
+
+def solve_z3(problem: Problem) -> None:
+    s = z3.Solver()
 
 
 def get_unique_color(seen_colors: Set[int]) -> int:
