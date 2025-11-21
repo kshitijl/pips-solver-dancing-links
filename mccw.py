@@ -536,6 +536,66 @@ def solve_cp_sat(problem: Problem) -> None:
 def solve_z3(problem: Problem) -> None:
     s = z3.Solver()
 
+    # boolean x_i for each option. x_i == 1 <=> option is selected
+    x = [z3.Bool(f"x_{i}") for i in range(len(problem.options))]
+
+    # pseudo-boolean constraint for each primary item:
+    # L <= sum(weight * x_i) <= U, for options i that use that item
+
+    primary_map: Dict[str, List[Tuple[z3.BoolRef, int]]] = defaultdict(list)
+    for idx, option in enumerate(problem.options):
+        for pname, pdata in option.primaries.items():
+            primary_map[pname].append((x[idx], pdata.weight))
+
+    for pname, item_data in problem.primary_items.items():
+        terms = primary_map[pname]
+        if not terms:
+            continue
+
+        if item_data.slack == 0:
+            s.add(z3.PbEq(terms, item_data.bound))
+        else:
+            s.add(z3.PbLe(terms, item_data.bound))
+            s.add(z3.PbGe(terms, item_data.bound - item_data.slack))
+
+    # secondary item color constraints
+    # if option i uses item i with color c, then i == c
+
+    sec_vars = {name: z3.Int(f"s_{name}") for name in problem.secondary_items}
+
+    for idx, option in enumerate(problem.options):
+        for sname, sdata in option.secondaries.items():
+            s_var = sec_vars[sname]
+
+            s.add(z3.Implies(x[idx], s_var == sdata.color))
+
+    # We don't need a clause to get rid of ghost solutions from unconstrained
+    # color variables, because during enumeration we'll block all the primaries
+    # corresponding to that solution
+
+    start = time.time()
+    print("Beginning to solve with Z3", file=sys.stderr)
+
+    num_solutions = 0
+    while s.check() == z3.sat:
+        num_solutions += 1
+        if num_solutions % 100 == 0:
+            print(f"Found {num_solutions} solutions")
+        model = s.model()
+
+        blocking_clause = []
+        for i, var in enumerate(x):
+            if z3.is_true(model[var]):
+                blocking_clause.append(z3.Not(var))
+            else:
+                blocking_clause.append(var)
+        s.add(z3.Or(blocking_clause))
+
+    print(
+        f"Z3 finished. Found {num_solutions} solutions in {time.time() - start:.2f} seconds",
+        file=sys.stderr,
+    )
+
 
 def get_unique_color(seen_colors: Set[int]) -> int:
     if not seen_colors:
@@ -662,6 +722,7 @@ def main() -> None:
     )
     parser.add_argument("--arc-consistency", default=False, action="store_true")
     parser.add_argument("--cp-sat", default=False, action="store_true")
+    parser.add_argument("--z3", default=False, action="store_true")
     args = parser.parse_args()
 
     params = Params(
@@ -688,6 +749,8 @@ def main() -> None:
                 print(lines[line_number], end="")
     elif args.cp_sat:
         solve_cp_sat(problem)
+    elif args.z3:
+        solve_z3(problem)
     else:
         problem.solve(stats, params)
         print(
