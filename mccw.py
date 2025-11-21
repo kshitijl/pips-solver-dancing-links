@@ -463,6 +463,8 @@ def solve_cp_sat(problem: Problem) -> None:
     x_secondary: Dict[str, List[cp_model.IntVar]] = defaultdict(list)
 
     primary_constraint: Dict[str, cp_model_helper.SumArray] = {}
+
+    reverse_map = defaultdict(list)
     for option_idx, option in enumerate(problem.options):
         for pname, pdata in option.primaries.items():
             term = pdata.weight * x_option[option_idx]
@@ -479,6 +481,13 @@ def solve_cp_sat(problem: Problem) -> None:
                 x_secondary[sname].append(var)
 
             model.add(x_option[option_idx] <= x_secondary_color[t])
+            reverse_map[t].append(x_option[option_idx])
+
+    for t, option_vars in reverse_map.items():
+        color_var = x_secondary_color[t]
+        # if color_var is True, then OR(option_vars) must be True
+        # without this, we overcount solutions because the color vars are free
+        model.add_bool_or(option_vars).only_enforce_if(color_var)
 
     for item_name, item_data in problem.primary_items.items():
         expr = primary_constraint[item_name]
