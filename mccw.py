@@ -438,8 +438,11 @@ class Problem:
         self,
         stats: Stats,
         params: Params,
-    ) -> SolveResult:
-        return self.solve_(stats, params, [])
+    ) -> None:
+        start = time.time()
+        self.solve_(stats, params, [])
+        end = time.time()
+        print(f"Backtracker finished in {end - start:.2f} seconds")
 
 
 def solve_cp_sat(problem: Problem) -> None:
@@ -454,17 +457,21 @@ def solve_cp_sat(problem: Problem) -> None:
     # for secondary items not assigned a color: sum <= 1
     # for secondary items assigned a color: make a boolean variable for each possible color of each colored secondary item, then: sum of them <= 1. and for any option that assigns that color to that secondary, x_option <= x_color_sec
 
+    max_color_for: Dict[str, int] = {}
+    for option in problem.options:
+        for sname, sdata in option.secondaries.items():
+            max_color_for[sname] = max(max_color_for.get(sname, 0), sdata.color)
+
     x_option = [model.new_bool_var(f"x_{i}") for i in range(len(problem.options))]
 
     # at loading time we generate a unique color for every option that has a
     # secondary without a color. this is equivalent to the uncolored constraint,
     # where each secondary can be used at most once.
-    x_secondary_color: Dict[Tuple[str, int], cp_model.IntVar] = {}
-    x_secondary: Dict[str, List[cp_model.IntVar]] = defaultdict(list)
+    x_secondary: Dict[str, cp_model.IntVar] = {}
+    users_for_secondary: Dict[str, List[cp_model.IntVar]] = defaultdict(list)
 
     primary_constraint: Dict[str, cp_model_helper.SumArray] = {}
 
-    reverse_map = defaultdict(list)
     for option_idx, option in enumerate(problem.options):
         for pname, pdata in option.primaries.items():
             term = pdata.weight * x_option[option_idx]
@@ -474,20 +481,20 @@ def solve_cp_sat(problem: Problem) -> None:
                 primary_constraint[pname] += term
 
         for sname, sdata in option.secondaries.items():
-            t = (sname, sdata.color)
-            if t not in x_secondary_color:
-                var = model.new_bool_var(f"s_{sname}_{sdata.color}")
-                x_secondary_color[t] = var
-                x_secondary[sname].append(var)
+            if sname not in x_secondary:
+                var = model.new_int_var(-1, max_color_for[sname], f"s_{sname}")
+                x_secondary[sname] = var
 
-            model.add(x_option[option_idx] <= x_secondary_color[t])
-            reverse_map[t].append(x_option[option_idx])
+            assert sdata.color <= max_color_for[sname], (
+                f"{sdata.color=}, {max_color_for[sname]=}"
+            )
+            model.add(x_secondary[sname] == sdata.color).only_enforce_if(
+                x_option[option_idx]
+            )
+            users_for_secondary[sname].append(x_option[option_idx])
 
-    for t, option_vars in reverse_map.items():
-        color_var = x_secondary_color[t]
-        # if color_var is True, then OR(option_vars) must be True
-        # without this, we overcount solutions because the color vars are free
-        model.add_bool_or(option_vars).only_enforce_if(color_var)
+    for sname, users in users_for_secondary.items():
+        model.add(x_secondary[sname] == -1).only_enforce_if([~x for x in users])
 
     for item_name, item_data in problem.primary_items.items():
         expr = primary_constraint[item_name]
@@ -496,9 +503,6 @@ def solve_cp_sat(problem: Problem) -> None:
         else:
             model.add(expr <= item_data.bound)
             model.add(expr >= item_data.bound - item_data.slack)
-
-    for sitem_name, vars in x_secondary.items():
-        model.add(sum(vars) <= 1)
 
     print(f"Finished building CP-SAT model: {model.model_stats()}", file=sys.stderr)
 
@@ -509,7 +513,7 @@ def solve_cp_sat(problem: Problem) -> None:
 
         def on_solution_callback(self) -> None:
             self.num_solutions += 1
-            if self.num_solutions % 10 == 0:
+            if self.num_solutions % 100 == 0:
                 print(f"Found {self.num_solutions} solutions")
 
     solver = cp_model.CpSolver()
@@ -525,7 +529,7 @@ def solve_cp_sat(problem: Problem) -> None:
         print("No solution found", file=sys.stderr)
 
     end = time.time()
-    print(f"CP-SAT finished in {end - start:.2} seconds")
+    print(f"CP-SAT finished in {end - start:.2f} seconds")
     # ..
 
 
