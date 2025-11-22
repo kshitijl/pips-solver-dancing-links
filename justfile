@@ -19,7 +19,7 @@ _mccw date difficulty *flags:
     time uv run mccw.py generated-weighted-instances/{{date}}-{{difficulty}} {{flags}}
 
 _mccwdlx date difficulty *flags:
-    time ../cover/bin/mccw generated-weighted-instances/{{date}}-{{difficulty}} {{flags}}
+    time ./cover/bin/mccw generated-weighted-instances/{{date}}-{{difficulty}} {{flags}}
 
 _generate-mcc date difficulty='easy':
     uv run main.py data/{{date}}.json -d "{{difficulty}}" > generated-mcc-instances/{{date}}-{{difficulty}}
