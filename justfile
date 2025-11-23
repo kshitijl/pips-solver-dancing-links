@@ -13,7 +13,7 @@ print-solutions date difficulty='easy': (_generate-mcc date difficulty)
     @just _mcc {{date}} {{difficulty}} "-v1" | grep d_ | awk '{ $1=""; print }' | sort
 
 _mcc date difficulty verbosity_flag:
-    time ./mcc {{verbosity_flag}} generated-mcc-instances/{{date}}-{{difficulty}}
+    time ./cover/bin/mcc {{verbosity_flag}} generated-mcc-instances/{{date}}-{{difficulty}}
 
 _mccw date difficulty *flags:
     time uv run mccw.py generated-weighted-instances/{{date}}-{{difficulty}} {{flags}}
